@@ -1,15 +1,15 @@
 // Copyright (C) 2011 Werner Dittmann
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
@@ -25,7 +25,7 @@ package rtp
 // PT        encoding name   audio/video (A/V)  clock rate (Hz)  channels (audio)  Reference
 // --------  --------------  -----------------  ---------------  ----------------  ---------
 // 0         PCMU            A                  8000             1                 [RFC3551]
-// 1         Reserved    
+// 1         Reserved
 // 2         Reserved
 // 3         GSM             A                  8000             1                 [RFC3551]
 // 4         G723            A                  8000             1                 [Kumar][RFC3551]
@@ -62,7 +62,7 @@ package rtp
 // 35-71     Unassigned      ?
 // 72-76     Reserved for RTCP conflict avoidance                                  [RFC3551]
 // 77-95     Unassigned      ?
-// 96-127    dynamic         ?                                                     [RFC3551] 
+// 96-127    dynamic         ?                                                     [RFC3551]
 
 const (
     Audio = 1
@@ -71,18 +71,18 @@ const (
 
 // PayloadFormat holds RTP payload formats.
 //
-// The global variable PayloadFormatMap holds the well known payload formats 
-// (see http://www.iana.org/assignments/rtp-parameters). 
+// The global variable PayloadFormatMap holds the well known payload formats
+// (see http://www.iana.org/assignments/rtp-parameters).
 // Applications shall not alter these predefined formats.
 //
 // If an application needs additional payload formats it must create and populate
 // PayloadFormat structures and insert them into PayloadFormatMap before setting
-// up the RTP communication. The index (key) into the map must be the payload 
+// up the RTP communication. The index (key) into the map must be the payload
 // format number. For dynamic payload formats applications shall use payload
 // format numbers between 96 and 127 only.
 //
-// For example if a dynamic format uses the payload number 98 then the application 
-// may perform: 
+// For example if a dynamic format uses the payload number 98 then the application
+// may perform:
 //
 //     PayloadFormatMap[98] = &net.rtp.PayloadFormat{98, net.rtp.Audio, 41000, 2, "CD"}
 //
@@ -99,7 +99,7 @@ var PayloadFormatMap = make(payloadMap, 25)
 
 func init() {
     PayloadFormatMap[0] = &PayloadFormat{0, Audio, 8000, 1, "PCMU"}
-    // 1         Reserved    
+    // 1         Reserved
     // 2         Reserved
     PayloadFormatMap[3] = &PayloadFormat{3, Audio, 8000, 1, "GSM"}
     PayloadFormatMap[4] = &PayloadFormat{4, Audio, 8000, 1, "G723"}
@@ -136,5 +136,5 @@ func init() {
     // 35-71     Unassigned      ?
     // 72-76     Reserved for RTCP conflict avoidance
     // 77-95     Unassigned      ?
-    // 96-127    dynamic         ? 
+    // 96-127    dynamic         ?
 }

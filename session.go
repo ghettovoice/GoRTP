@@ -1,15 +1,15 @@
 // Copyright (C) 2011 Werner Dittmann
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
@@ -38,7 +38,7 @@ type Session struct {
     dataReceiveChan DataReceiveChan
     ctrlEventChan   CtrlEventChan
 
-    streamsMapMutex sync.Mutex // synchronize activities on stream maps 
+    streamsMapMutex sync.Mutex // synchronize activities on stream maps
     streamsOut      streamOutMap
     streamsIn       streamInMap
     remotes         remoteMap
@@ -70,11 +70,11 @@ type Address struct {
 
 // The RTP stack sends CtrlEvent to the application if it creates a new input stream or receives RTCP packets.
 //
-// A RTCP compound may contain several RTCP packets. The RTP stack creates a CtrlEvent structure for each RTCP 
-// packet (SDES, BYE, etc) or report and stores them in a slice of CtrlEvent pointers and sends 
+// A RTCP compound may contain several RTCP packets. The RTP stack creates a CtrlEvent structure for each RTCP
+// packet (SDES, BYE, etc) or report and stores them in a slice of CtrlEvent pointers and sends
 // this slice to the application after all RTCP packets and reports are processed. The application may now loop
 // over the slice and select the events that it may process.
-//   
+//
 type CtrlEvent struct {
     EventType int    // Either a Stream event or a Rtcp* packet type event, e.g. RtcpSR, RtcpRR, RtcpSdes, RtcpBye
     Ssrc      uint32 // the input stream's SSRC
@@ -94,8 +94,8 @@ type CtrlEventChan chan []*CtrlEvent
 // RTCP values to manage RTCP transmission intervals
 type RtcpTransmission struct {
     tprev, // the last time an RTCP packet was transmitted
-    tnext int64 // next scheduled transmission time 
-    RtcpSessionBandwidth float64 // Applications may (should) set this to bits/sec for RTCP traffic. 
+    tnext int64 // next scheduled transmission time
+    RtcpSessionBandwidth float64 // Applications may (should) set this to bits/sec for RTCP traffic.
     // If not set RTP stack makes an educated guess.
     avrgPacketLength float64
 }
@@ -108,13 +108,13 @@ func (s Error) Error() string {
 }
 
 // Specific control event type that signal that a new input stream was created.
-// 
+//
 // If the RTP stack receives a data or control packet for a yet unknown input stream
 // (SSRC not known) the stack creates a new input stream and signals this action to the application.
 const (
     NewStreamData             = iota // Input stream creation triggered by a RTP data packet
     NewStreamCtrl                    // Input stream creation triggered by a RTCP control packet
-    MaxNumInStreamReachedData        // Maximum number of input streams reached while receiving an RTP packet 
+    MaxNumInStreamReachedData        // Maximum number of input streams reached while receiving an RTP packet
     MaxNumInStreamReachedCtrl        // Maximum number of input streams reached while receiving an RTCP packet
     WrongStreamStatusData            // Received RTP packet for an inactive stream
     WrongStreamStatusCtrl            // Received RTCP packet for an inactive stream
@@ -123,7 +123,7 @@ const (
 )
 
 // The receiver transports return these vaules via the TransportEnd channel when they are
-// done stopping the data or control receivers. 
+// done stopping the data or control receivers.
 const (
     DataTransportRecvStopped = 0x1
     CtrlTransportRecvStopped = 0x2
@@ -194,10 +194,10 @@ func (rs *Session) RemoveRemote(index uint32) {
 // (up to 2^64 streams per session :-) )
 //
 //   own        - Output stream's own address. Required to detect collisions and loops.
-//   ssrc       - If not zero then this is the SSRC of the output stream. If zero then 
+//   ssrc       - If not zero then this is the SSRC of the output stream. If zero then
 //                the method generates a random SSRC according to RFC 3550.
-//   sequenceNo - If not zero then this is the starting sequence number of the output stream. 
-//                If zero then the method generates a random starting sequence number according 
+//   sequenceNo - If not zero then this is the starting sequence number of the output stream.
+//                If zero then the method generates a random starting sequence number according
 //                to RFC 3550
 //
 func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16) (index uint32, err Error) {
@@ -238,7 +238,7 @@ func (rs *Session) StartSession() (err error) {
         for _, str := range rs.streamsOut {
             format := PayloadFormatMap[int(str.PayloadType())]
             if format == nil {
-                rs.RtcpSessionBandwidth += 64000. / 20.0 // some standard: 5% of a 64000 bit connection 
+                rs.RtcpSessionBandwidth += 64000. / 20.0 // some standard: 5% of a 64000 bit connection
             }
             // Assumption: fixed codec used, 8 byte per sample, one channel
             rs.RtcpSessionBandwidth += float64(format.ClockRate) * 8.0 / 20.
@@ -256,7 +256,7 @@ func (rs *Session) StartSession() (err error) {
 
 // CloseSession closes the complete RTP session immediately.
 //
-// The methods stops the RTCP service, sends a BYE to all remaining active output streams, and 
+// The methods stops the RTCP service, sends a BYE to all remaining active output streams, and
 // closes the receiver transports,
 //
 func (rs *Session) CloseSession() {
@@ -276,14 +276,14 @@ func (rs *Session) CloseSession() {
 // number, the updated timestamp, and payload type if payload type was set in the stream.
 //
 // The application computes the next stamp based on the payload's frequency. The stamp usually
-// advances by the number of samples contained in the RTP packet. 
+// advances by the number of samples contained in the RTP packet.
 //
 // For example PCMU with a 8000Hz frequency sends 160 samples every 20m - thus the timestamp
-// must adavance by 160 for each following packet. For fixed codecs, for example PCMU, the 
+// must adavance by 160 for each following packet. For fixed codecs, for example PCMU, the
 // number of samples correspond to the payload length. For variable codecs the number of samples
 // has no direct relationship with the payload length.
 //
-//   stamp - the RTP timestamp for this packet. 
+//   stamp - the RTP timestamp for this packet.
 //
 func (rs *Session) NewDataPacket(stamp uint32) *DataPacket {
     str := rs.streamsOut[0]
@@ -372,7 +372,7 @@ func (rs *Session) SsrcStreamInForIndex(streamIndex uint32) *SsrcStream {
 // In this state the stream stops its activities, does not send any new data or
 // control packets. Eventually it will be in the state "is closed" and its resources
 // are returned to the system. An application must not re-use a session.
-// 
+//
 func (rs *Session) SsrcStreamClose() {
     rs.SsrcStreamOutForIndex(0)
 }
@@ -494,7 +494,7 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 // Normal application don't use this method. Only if an application implements its own idea
 // of the rtp.TransportRecv interface it must implement this function.
 //
-// Delegating is not yet implemented. Applications may receive control events via 
+// Delegating is not yet implemented. Applications may receive control events via
 // the CtrlEventChan.
 //
 func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
@@ -633,7 +633,7 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
                     st.streamStatus = isClosing
                 }
                 // Recompute time intervals, see chapter 6.3.4
-                // TODO: not len(rs.streamsIn) but get number of members with streamStatus == active 
+                // TODO: not len(rs.streamsIn) but get number of members with streamStatus == active
                 pmembers := float64(len(rs.streamsOut) + len(rs.streamsIn))
                 members := pmembers - 1.0 // received a BYE for one input channel
                 tc := float64(time.Now().UnixNano())
@@ -663,7 +663,7 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
     default:
     }
     // re-compute average packet size. Don't re-compute RTCP interval time, will be done on next RTCP report
-    // interval. The timing is not affected that much by delaying the interval re-computation. 
+    // interval. The timing is not affected that much by delaying the interval re-computation.
     size := float64(rp.InUse() + 20 + 8) // TODO: get real values for IP and transport from transport module
     rs.avrgPacketLength = (1.0/16.0)*size + (15.0/16.0)*rs.avrgPacketLength
 
@@ -696,7 +696,7 @@ func (rs *Session) CloseRecv() {
 // SetEndChannel implements the rtp.TransportRecv SetEndChannel method.
 //
 // An application may register a specific control channel to get information after
-// all receiver transports were closed. 
+// all receiver transports were closed.
 //
 // Only relevant if an application uses "simple RTP".
 //

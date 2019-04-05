@@ -1,15 +1,15 @@
 // Copyright (C) 2011 Werner Dittmann
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
@@ -19,9 +19,9 @@
 package rtp
 
 import (
-    "crypto/rand"
-    "time"
-    "sync"
+	"crypto/rand"
+	"sync"
+	"time"
 )
 
 const (
@@ -55,7 +55,7 @@ type ctrlStatistics struct {
     lastRtcpSrTime int64 // time the last RTCP SR was received. Required for DLSR computation.
 
     // Data used to compute outgoing RR reports.
-    packetCount, // number of packets received from this source.       
+    packetCount, // number of packets received from this source.
     octetCount, // number of octets received from this source.
     extendedMaxSeqNum,
     lastPacketTransitTime,
@@ -99,10 +99,10 @@ type SsrcStream struct {
     streamType   int
     streamStatus int
     streamMutex  sync.Mutex
-    Address      // Own if it is an output stream, remote address in case of input stream
-    SenderInfoData // Sender reports if this is an input stream, read only.
-    RecvReportData // Receiver reports if this is an output stream, read anly.
-    SdesItems      SdesItemMap // SDES item map, indexed by the RTCP SDES item types constants. 
+	Address                    // Own if it is an output stream, remote address in case of input stream
+    SenderInfoData             // Sender reports if this is an input stream, read only.
+    RecvReportData             // Receiver reports if this is an output stream, read anly.
+    SdesItems      SdesItemMap // SDES item map, indexed by the RTCP SDES item types constants.
     // Read only, to set item use SetSdesItem()
     sdesChunkLen   int // pre-computed SDES chunk length - updated when setting a new name, relevant for output streams
 
@@ -127,7 +127,7 @@ const defaultCname = "GoRTP1.0.0@somewhere"
 
 const seqNumMod = (1 << 16)
 
-/* 
+/*
  * *****************************************************************
  * SsrcStream functions, valid for output and input streams
  * *****************************************************************
@@ -175,7 +175,7 @@ func (str *SsrcStream) StreamType() int {
     return str.streamType
 }
 
-/* 
+/*
  * *****************************************************************
  * Processing for output streams
  * *****************************************************************
@@ -210,14 +210,14 @@ func newSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16) (so *SsrcStr
 // number, the updated timestamp, and payload type if payload type was set in the stream.
 //
 // The application computes the next stamp based on the payload's frequency. The stamp usually
-// advances by the number of samples contained in the RTP packet. 
+// advances by the number of samples contained in the RTP packet.
 //
 // For example PCMU with a 8000Hz frequency sends 160 samples every 20m - thus the timestamp
-// must adavance by 160 for each following packet. For fixed codecs, for example PCMU, the 
+// must adavance by 160 for each following packet. For fixed codecs, for example PCMU, the
 // number of samples correspond to the payload length. For variable codecs the number of samples
 // has no direct relationship with the payload length.
 //
-//   stamp - the RTP timestamp for this packet. 
+//   stamp - the RTP timestamp for this packet.
 //
 func (str *SsrcStream) newDataPacket(stamp uint32) (rp *DataPacket) {
     rp = newDataPacket()
@@ -233,7 +233,7 @@ func (str *SsrcStream) newDataPacket(stamp uint32) (rp *DataPacket) {
 //
 // This method returns an initialized RTCP packet that contains the correct SSRC, and the RTCP packet
 // type. In addition the method returns the offset to the next position inside the buffer.
-//  
+//
 //
 //   streamindex - the index of the output stream as returned by NewSsrcStreamOut
 //   stamp       - the RTP timestamp for this packet.
@@ -356,13 +356,13 @@ func (so *SsrcStream) makeByeData(rc *CtrlPacket, reason string) (newOffset int)
     return
 }
 
-/* 
+/*
  * *****************************************************************
  *  Processing for input streams
  * *****************************************************************
  */
 
-// newSsrcStreamIn creates a new input stream and sets the variables required for 
+// newSsrcStreamIn creates a new input stream and sets the variables required for
 // RTP and RTCP processing to well defined initial values.
 func newSsrcStreamIn(from *Address, ssrc uint32) (si *SsrcStream) {
     si = new(SsrcStream)
@@ -377,7 +377,7 @@ func newSsrcStreamIn(from *Address, ssrc uint32) (si *SsrcStream) {
 }
 
 // checkSsrcIncomingData checks for collision or loops on incoming data packets.
-// Implements th algorithm found in chap 8.2 in RFC 3550 
+// Implements th algorithm found in chap 8.2 in RFC 3550
 func (si *SsrcStream) checkSsrcIncomingData(existingStream bool, rs *Session, rp *DataPacket) (result bool) {
     result = true
 
@@ -408,7 +408,7 @@ func (si *SsrcStream) checkSsrcIncomingData(existingStream bool, rs *Session, rp
                 si.DataPort = rp.fromAddr.DataPort
             }
         } else {
-            // Collision or loop of own packets. In this case si was found in ouput stream map, 
+            // Collision or loop of own packets. In this case si was found in ouput stream map,
             // thus cannot be in input stream map
             if rs.checkConflictData(&rp.fromAddr) {
                 // Optional error counter.
@@ -506,7 +506,7 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 
         // compute the interarrival jitter estimation.
         pt := int(rp.PayloadType())
-        // compute lastPacketTime to ms and clockrate as kHz 
+        // compute lastPacketTime to ms and clockrate as kHz
         arrival := uint32(si.statistics.lastPacketTime / 1e6 * int64(PayloadFormatMap[pt].ClockRate/1e3))
         transitTime := arrival - rp.Timestamp()
         if si.statistics.lastPacketTransitTime != 0 {
@@ -522,7 +522,7 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 }
 
 // checkSsrcIncomingData checks for collision or loops on incoming data packets.
-// Implements th algorithm found in chap 8.2 in RFC 3550 
+// Implements th algorithm found in chap 8.2 in RFC 3550
 func (si *SsrcStream) checkSsrcIncomingCtrl(existingStream bool, rs *Session, from *Address) (result bool) {
     result = true
 
@@ -643,7 +643,7 @@ func (si *SsrcStream) hello() bool {
     return true
 }
 
-// initStats initializes all RTCP statistic counters and other relevant data. 
+// initStats initializes all RTCP statistic counters and other relevant data.
 func (si *SsrcStream) initStats() {
     si.statistics.lastPacketTime = 0
     si.statistics.lastRtcpPacketTime = 0
@@ -669,7 +669,7 @@ func (si *SsrcStream) initStats() {
 }
 
 func (si *SsrcStream) parseSdesChunk(sc sdesChunk) {
-    offset := 4 // points after SSRC field of this chunk    
+    offset := 4 // points after SSRC field of this chunk
 
     for {
         itemType := sc.getItemType(offset)

@@ -1,15 +1,15 @@
 // Copyright (C) 2011 Werner Dittmann
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
@@ -25,7 +25,7 @@ import (
 
 // RtpTransportUDP implements the interfaces RtpTransportRecv and RtpTransportWrite for RTP transports.
 type TransportUDP struct {
-    TransportCommon
+	TransportCommon
     callUpper                   TransportRecv
     toLower                     TransportWrite
     dataConn, ctrlConn          *net.UDPConn
@@ -35,9 +35,9 @@ type TransportUDP struct {
 // NewRtpTransportUDP creates a new RTP transport for UPD.
 //
 // addr - The UPD socket's local IP address
-// 
+//
 // port - The port number of the RTP data port. This must be an even port number.
-//        The following odd port number is the control (RTCP) port. 
+//        The following odd port number is the control (RTCP) port.
 //
 func NewTransportUDP(addr *net.IPAddr, port int, zone string) (*TransportUDP, error) {
     tp := new(TransportUDP)
@@ -48,7 +48,7 @@ func NewTransportUDP(addr *net.IPAddr, port int, zone string) (*TransportUDP, er
 }
 
 // ListenOnTransports listens for incoming RTP and RTCP packets addressed
-// to this transport. 
+// to this transport.
 //
 func (tp *TransportUDP) ListenOnTransports() (err error) {
     tp.dataConn, err = net.ListenUDP(tp.localAddrRtp.Network(), tp.localAddrRtp)
@@ -108,7 +108,7 @@ func (tp *TransportUDP) CloseRecv() {
     tp.ctrlConn.Close()
 }
 
-// setEndChannel receives and set the channel to signal back after network socket was closed and receive loop terminated. 
+// setEndChannel receives and set the channel to signal back after network socket was closed and receive loop terminated.
 func (tp *TransportUDP) SetEndChannel(ch TransportEnd) {
     tp.transportEnd = ch
 }

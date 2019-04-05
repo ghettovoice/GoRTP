@@ -1,15 +1,15 @@
 // Copyright (C) 2011 Werner Dittmann
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
@@ -19,11 +19,11 @@
 package rtp
 
 import (
-    "fmt"
-    "net"
-    "testing"
-    "flag"
-    "time"
+	"flag"
+	"fmt"
+	"net"
+	"testing"
+	"time"
 )
 
 var verbose *bool = flag.Bool("verbose", false, "Verbose output during tests")
@@ -39,7 +39,7 @@ var csrc_1 = []uint32{0x21435465, 0x65544322}
 var csrc_2 = []uint32{0x23445566, 0x66554423, 0x87766554}
 var csrc_3 = []uint32{}
 
-//                 profile ID     length 
+//                 profile ID     length
 var ext_1 = []byte{0x77, 0x88, 0x00, 0x02, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x02, 0x01}                         // len: 12
 var ext_2 = []byte{0x77, 0x89, 0x00, 0x03, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x02, 0x01, 0x11, 0x22, 0x33, 0x44} // len: 16
 var ext_3 = []byte{0x77, 0x8a, 0x00, 0x00}                                                                         // len: 4
@@ -83,7 +83,7 @@ func csrcTest(rp *DataPacket, t *testing.T, csrc []uint32, run int) (result bool
     csrcTmp := rp.CsrcList()
     for i, v := range csrcTmp {
         if v != csrc[i] {
-            t.Error(fmt.Sprintf("CSRC-%d check failed at %i. Expected: %x, got: %x\n", run, i, csrc[i], csrcTmp[i]))
+            t.Error(fmt.Sprintf("CSRC-%d check failed at %d. Expected: %x, got: %x\n", run, i, csrc[i], csrcTmp[i]))
             return
         }
     }
@@ -96,7 +96,7 @@ func csrcTest(rp *DataPacket, t *testing.T, csrc []uint32, run int) (result bool
     pay := rp.Payload()
     for i, v := range payload {
         if v != pay[i] {
-            t.Error(fmt.Sprintf("Payload-CSRC-%d check failed at %i. Expected: %x, got: %x\n", run, i, payload[i], pay[i]))
+            t.Error(fmt.Sprintf("Payload-CSRC-%d check failed at %d. Expected: %x, got: %x\n", run, i, payload[i], pay[i]))
             return
         }
     }
@@ -122,7 +122,7 @@ func extTest(rp *DataPacket, t *testing.T, ext []byte, run int) (result bool) {
     extTmp := rp.Extension()
     for i, v := range extTmp {
         if v != ext[i] {
-            t.Error(fmt.Sprintf("EXT-%d check failed at %i. Expected: %x, got: %x\n", run, i, ext[i], extTmp[i]))
+            t.Error(fmt.Sprintf("EXT-%d check failed at %d. Expected: %x, got: %x\n", run, i, ext[i], extTmp[i]))
             return
         }
     }
@@ -135,7 +135,7 @@ func extTest(rp *DataPacket, t *testing.T, ext []byte, run int) (result bool) {
     pay := rp.Payload()
     for i, v := range payload {
         if v != pay[i] {
-            t.Error(fmt.Sprintf("Payload-EXT-%d check failed at %i. Expected: %x, got: %x\n", run, i, payload[i], pay[i]))
+            t.Error(fmt.Sprintf("Payload-EXT-%d check failed at %d. Expected: %x, got: %x\n", run, i, payload[i], pay[i]))
             return
         }
     }
@@ -160,8 +160,8 @@ func rtpPacket(t *testing.T) {
     // set it in the RtpSession for both interfaces
     rsLocal := NewSession(tpLocal, tpLocal)
 
-    // Create a media stream. 
-    // The SSRC identifies the stream. Each stream has its own sequence number and other 
+    // Create a media stream.
+    // The SSRC identifies the stream. Each stream has its own sequence number and other
     // context. A RTP session can have several RTP stream for example to send several
     // streams of the same media.
     //
@@ -169,9 +169,9 @@ func rtpPacket(t *testing.T) {
     rsLocal.SsrcStreamOutForIndex(strIdx).SetPayloadType(3)
 
     // Create a RTP packet suitable for standard stream (index 0) with a payload length of 160 bytes
-    // The method initializes the RTP packet with SSRC, sequence number, and RTP version number. 
+    // The method initializes the RTP packet with SSRC, sequence number, and RTP version number.
     // If the payload type was set with the RTP stream then the payload type is also set in
-    // the RTP packet   
+    // the RTP packet
     rp := rsLocal.NewDataPacket(160)
     rp.SetTimestamp(0xF0E0D0C0)
 
@@ -202,7 +202,7 @@ func rtpPacket(t *testing.T) {
     }
     for i, v := range payload {
         if v != pay[i] {
-            t.Error(fmt.Sprintf("Payload check failed at %i. Expected: %x, got: %x\n", i, payload[i], pay[i]))
+            t.Error(fmt.Sprintf("Payload check failed at %d. Expected: %x, got: %x\n", i, payload[i], pay[i]))
             return
         }
     }
@@ -240,7 +240,7 @@ func rtpPacket(t *testing.T) {
     // Check padding
     rp.SetPadding(true, 0) // zero defaults to multiple of int32 (4)
 
-    // Check payload handling with padding; len(payload) +  rtpHeaderLength is 22, thus 2 bytes padding 
+    // Check payload handling with padding; len(payload) +  rtpHeaderLength is 22, thus 2 bytes padding
     rp.SetPayload(payload)
     use = rp.InUse()
     if use != (rtpHeaderLength + len(payload) + 2) {
@@ -254,7 +254,7 @@ func rtpPacket(t *testing.T) {
     }
     for i, v := range payload {
         if v != pay[i] {
-            t.Error(fmt.Sprintf("Payload check failed at %i. Expected: %x, got: %x\n", i, payload[i], pay[i]))
+            t.Error(fmt.Sprintf("Payload check failed at %d. Expected: %x, got: %x\n", i, payload[i], pay[i]))
             return
         }
     }

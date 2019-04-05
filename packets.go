@@ -1,15 +1,15 @@
 // Copyright (C) 2011 Werner Dittmann
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
@@ -105,7 +105,7 @@ type RawPacket struct {
 // Buffer returns the internal buffer in raw format.
 // Usually only other Transports use the buffer in raw format, for example to encrypt
 // or decrypt the buffer.
-// Always call Buffer() just before the the buffer is actually used because several packet 
+// Always call Buffer() just before the the buffer is actually used because several packet
 // handling functions may re-allocate buffers.
 func (raw *RawPacket) Buffer() []byte {
     return raw.buffer
@@ -114,7 +114,7 @@ func (raw *RawPacket) Buffer() []byte {
 // InUse returns the number of valid bytes in the packet buffer.
 // Several function modify the inUse variable, for example when copying payload or setting extensions
 // in the RTP packet. Thus "buffer[0:inUse]" is the slice inside the buffer that will be sent or
-// was received.  
+// was received.
 func (rp *RawPacket) InUse() int {
     return rp.inUse
 }
@@ -169,7 +169,7 @@ func (rp *DataPacket) CsrcCount() uint8 {
 }
 
 // SetCsrcList takes the CSRC in this list, converts from host to network order and sets into the RTP packet.
-// The new CSRC list replaces an existing CSCR list. The list can have a maximum length of 16 CSCR values, 
+// The new CSRC list replaces an existing CSCR list. The list can have a maximum length of 16 CSCR values,
 // if the list contains more values the method leaves the RTP packet untouched.
 func (rp *DataPacket) SetCsrcList(csrc []uint32) {
 
@@ -188,7 +188,7 @@ func (rp *DataPacket) SetCsrcList(csrc []uint32) {
     tmpRp := newDataPacket() // get a new packet first
     newBuf := tmpRp.buffer   // and get its buffer
 
-    copy(newBuf, rp.buffer[0:rtpHeaderLength])              // copy fixed header 
+    copy(newBuf, rp.buffer[0:rtpHeaderLength])              // copy fixed header
     copy(newBuf[offsetNew:], rp.buffer[offsetOld:rp.inUse]) // copy over old content
 
     for i := 0; i < len(csrc); i++ {
@@ -215,7 +215,7 @@ func (rp *DataPacket) CsrcList() (list []uint32) {
 // SetExtension takes a byte slice and set it as extension into the RTP packet.
 // The byte slice must conform to one of the formats specified in RFC 3550 or RFC 5258, thus
 // the length must be a multiple of uint32 (4) and the length field must be in the 3rd and 4th
-// byte (uint16) and its value must adhere to RFC 3550 / RFC 5258. 
+// byte (uint16) and its value must adhere to RFC 3550 / RFC 5258.
 func (rp *DataPacket) SetExtension(ext []byte) {
     if (len(ext) % 4) != 0 {
         return
@@ -243,7 +243,7 @@ func (rp *DataPacket) SetExtension(ext []byte) {
     tmpRp := newDataPacket() // get a new packet first
     newBuf := tmpRp.buffer   // and get its buffer
 
-    copy(newBuf, rp.buffer[0:rtpHeaderLength])              // copy fixed header 
+    copy(newBuf, rp.buffer[0:rtpHeaderLength])              // copy fixed header
     copy(newBuf[offsetExt:], ext)                           // copy new extension
     copy(newBuf[offsetNew:], rp.buffer[offsetOld:rp.inUse]) // copy over old content
 
@@ -333,7 +333,7 @@ func (rp *DataPacket) Padding() bool {
 
 // SetPayloadType sets a new payload type value in the RTP packet header.
 func (rp *DataPacket) SetPayloadType(pt byte) {
-    rp.buffer[markerPtOffset] &^= ptMask // first: clear old type 
+    rp.buffer[markerPtOffset] &^= ptMask // first: clear old type
     rp.buffer[markerPtOffset] |= (pt & ptMask)
 }
 
@@ -357,7 +357,7 @@ func (rp *DataPacket) ExtensionBit() bool {
     return (rp.buffer[0] & extensionBit) == extensionBit
 }
 
-// ExtensionLength returns the full length in bytes of RTP packet extension (including the main extension header).  
+// ExtensionLength returns the full length in bytes of RTP packet extension (including the main extension header).
 func (rp *DataPacket) ExtensionLength() (length int) {
     if !rp.ExtensionBit() {
         return 0
@@ -659,7 +659,7 @@ func (rr recvReport) ssrc() uint32 {
     return binary.BigEndian.Uint32(rr[0:])
 }
 
-// setSSrc takes a 32 unsigned SSRC in host order and sets it in network order in RR. 
+// setSSrc takes a 32 unsigned SSRC in host order and sets it in network order in RR.
 func (rr recvReport) setSsrc(ssrc uint32) {
     binary.BigEndian.PutUint32(rr[0:], ssrc)
 }
@@ -670,7 +670,7 @@ func (rr recvReport) packetsLost() uint32 {
     return lost & 0xffffff
 }
 
-// setPacketsLost takes a 32 unsigned packet lost number in host order and sets lower 24 bits in network order in RR. 
+// setPacketsLost takes a 32 unsigned packet lost number in host order and sets lower 24 bits in network order in RR.
 func (rr recvReport) setPacketsLost(pktLost uint32) {
     fracSave := rr[4]
     pktLost &= 0xffffff
@@ -683,7 +683,7 @@ func (rr recvReport) packetsLostFrac() byte {
     return rr[4]
 }
 
-// setPacketsLostFrac takes the byte packet lost fractional and sets it in RR. 
+// setPacketsLostFrac takes the byte packet lost fractional and sets it in RR.
 func (rr recvReport) setPacketsLostFrac(frac byte) {
     rr[4] = frac
 }
@@ -693,7 +693,7 @@ func (rr recvReport) highestSeq() uint32 {
     return binary.BigEndian.Uint32(rr[8:])
 }
 
-// setHighestSeq takes a 32 unsigned sequence number in host order and sets it in network order in RR. 
+// setHighestSeq takes a 32 unsigned sequence number in host order and sets it in network order in RR.
 func (rr recvReport) setHighestSeq(seq uint32) {
     binary.BigEndian.PutUint32(rr[8:], seq)
 }
@@ -703,7 +703,7 @@ func (rr recvReport) jitter() uint32 {
     return binary.BigEndian.Uint32(rr[12:])
 }
 
-// setJitter takes a 32 unsigned jitter value in host order and sets it in network order in RR. 
+// setJitter takes a 32 unsigned jitter value in host order and sets it in network order in RR.
 func (rr recvReport) setJitter(jitter uint32) {
     binary.BigEndian.PutUint32(rr[12:], jitter)
 }
@@ -713,7 +713,7 @@ func (rr recvReport) lsr() uint32 {
     return binary.BigEndian.Uint32(rr[16:])
 }
 
-// setLsr takes a 32 unsigned LSR value in host order and sets it in network order in RR. 
+// setLsr takes a 32 unsigned LSR value in host order and sets it in network order in RR.
 func (rr recvReport) setLsr(lsr uint32) {
     binary.BigEndian.PutUint32(rr[16:], lsr)
 }
@@ -723,7 +723,7 @@ func (rr recvReport) dlsr() uint32 {
     return binary.BigEndian.Uint32(rr[20:])
 }
 
-// setDlsr takes a 32 unsigned DLSR value in host order and sets it in network order in RR. 
+// setDlsr takes a 32 unsigned DLSR value in host order and sets it in network order in RR.
 func (rr recvReport) setDlsr(dlsr uint32) {
     binary.BigEndian.PutUint32(rr[20:], dlsr)
 }
@@ -754,7 +754,7 @@ func (sdes sdesChunk) ssrc() uint32 {
     return binary.BigEndian.Uint32(sdes[0:])
 }
 
-// setSSrc takes a 32 unsigned SSRC in host order and sets it in network order in SDES chunk. 
+// setSSrc takes a 32 unsigned SSRC in host order and sets it in network order in SDES chunk.
 func (sdes sdesChunk) setSsrc(ssrc uint32) {
     binary.BigEndian.PutUint32(sdes[0:], ssrc)
 }
@@ -788,7 +788,7 @@ func (sc sdesChunk) chunkLen() (int, bool) {
     if 4+1 > len(sc) {
         return 0, false
     }
-    length := 4 // include SSRC field of this chunk    
+    length := 4 // include SSRC field of this chunk
     itemType := sc[length]
     if itemType == SdesEnd { // Cover case if chunk has zero items
         if 4+4 > len(sc) { // SSRC (4 byte), SdesEnd (1 byte) plus 3 bytes padding
@@ -830,7 +830,7 @@ func (bye byeData) ssrc(ssrcIdx int) uint32 {
     return binary.BigEndian.Uint32(bye[ssrcIdx*4:])
 }
 
-// setSSrc takes a 32 unsigned SSRC in host order and sets it at ssrcIdx in bye data (network order). 
+// setSSrc takes a 32 unsigned SSRC in host order and sets it at ssrcIdx in bye data (network order).
 func (bye byeData) setSsrc(ssrcIdx int, ssrc uint32) {
     binary.BigEndian.PutUint32(bye[ssrcIdx*4:], ssrc)
 }

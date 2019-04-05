@@ -1,15 +1,15 @@
 // Copyright (C) 2011 Werner Dittmann
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
@@ -39,7 +39,7 @@ const (
 // conflictAddr stores conflicting address detected during loop and collision check
 // It also stores the time of the latest conflict-
 type conflictAddr struct {
-    Address
+	Address
     seenAt int64
 }
 
@@ -50,7 +50,7 @@ const (
     rtcpCtrlCmdMask     = 0xff000000
     rtcpStopService     = 0x01000000
     rtcpModifyInterval  = 0x02000000 // Modify RTCP timer interval, low 3 bytes contain new tick time in ms
-    rtcpIncrementSender = 0x03000000 // a stream became an active sender, count this globally   
+    rtcpIncrementSender = 0x03000000 // a stream became an active sender, count this globally
 )
 
 // rtcpCtrlChan sends control data to the RTCP service.
@@ -60,8 +60,8 @@ const (
 //
 type rtcpCtrlChan chan uint32
 
-// Manages the output SSRC streams. 
-// 
+// Manages the output SSRC streams.
+//
 // Refer to RFC 3550: do not use SSRC to multiplex different media types on one session. One RTP session
 // shall handle one media type only. However, a RTP session can have several SSRC output streams for the
 // same media types, for example sending video data from two or more cameras.
@@ -103,9 +103,9 @@ func (rs *Session) rtcpService(ti, td int64) {
                 switch str.streamStatus {
                 case active:
                     str.streamMutex.Lock()
-                    // Manage number of active senders on input streams. 
+                    // Manage number of active senders on input streams.
                     // Every time this stream receives a packet it updates the last packet time. If the input stream
-                    // did not receive a RTP packet for 2 RTCP intervals its sender status is set to false and the 
+                    // did not receive a RTP packet for 2 RTCP intervals its sender status is set to false and the
                     // number of active senders in this session is decremented if not already zero. See chapter 6.3.5
                     rtpDiff := now - str.statistics.lastPacketTime
                     if str.sender {
@@ -119,7 +119,7 @@ func (rs *Session) rtcpService(ti, td int64) {
                             }
                         }
                     }
-                    // SSRC timeout processing: check for inactivity longer than 5*non-random interval time 
+                    // SSRC timeout processing: check for inactivity longer than 5*non-random interval time
                     // (both RTP/RTCP inactivity) chapter 6.3.5
                     rtcpDiff := now - str.statistics.lastRtcpPacketTime
                     if rtpDiff > rtcpDiff {
@@ -149,7 +149,7 @@ func (rs *Session) rtcpService(ti, td int64) {
                     streamForRR = str // remember one active stream in case there is no sending output stream
 
                     // Manage number of active senders. Every time this stream sends a packet the output stream
-                    // sender updates the last packet time. If the output stream did not send RTP for 2 RTCP 
+                    // sender updates the last packet time. If the output stream did not send RTP for 2 RTCP
                     // intervals its sender status is set to false and the number of active senders in this session
                     // is decremented if not already zero. See chapter 6.3.8
                     //
@@ -184,8 +184,8 @@ func (rs *Session) rtcpService(ti, td int64) {
             // If no active output stream is left then weSent becomes false
             rs.weSent = outputSenders > 0
 
-            // if rc is nil then we found no sending stream and havent't build a control packet. Just use 
-            // one active output stream as proxy to create at least an RR and the proxy's SDES (RR may be 
+            // if rc is nil then we found no sending stream and havent't build a control packet. Just use
+            // one active output stream as proxy to create at least an RR and the proxy's SDES (RR may be
             // empty as well). If also no active output stream - don't create and send RTCP report. In this
             // case the RTP stack in completey inactive.
             if rc == nil && streamForRR != nil {
@@ -333,7 +333,7 @@ func (rs *Session) addSenderReport(strOut *SsrcStream, rc *CtrlPacket) {
 }
 
 // rtcpSenderCheck is a helper function for OnRecvCtrl and checks if a sender's SSRC.
-// 
+//
 func (rs *Session) rtcpSenderCheck(rp *CtrlPacket, offset int) (*SsrcStream, uint32, bool) {
     ssrc := rp.Ssrc(offset) // get SSRC from control packet
 
@@ -363,7 +363,7 @@ func (rs *Session) rtcpSenderCheck(rp *CtrlPacket, offset int) (*SsrcStream, uin
     }
     rs.streamsMapMutex.Unlock()
 
-    // Check if sender's SSRC collides or loops 
+    // Check if sender's SSRC collides or loops
     if !str.checkSsrcIncomingCtrl(existing, rs, &rp.fromAddr) {
         return nil, StreamCollisionLoopCtrl, false
     }
@@ -372,7 +372,7 @@ func (rs *Session) rtcpSenderCheck(rp *CtrlPacket, offset int) (*SsrcStream, uin
     return str, strIdx, existing
 }
 
-// sendDataCtrlEvent is a helper function to OnRecvData and sends one control event to the application 
+// sendDataCtrlEvent is a helper function to OnRecvData and sends one control event to the application
 // if the control event chanel is active.
 //
 func (rs *Session) sendDataCtrlEvent(code int, ssrc, index uint32) {
@@ -507,7 +507,7 @@ func (rs *Session) processSdesChunk(chunk sdesChunk, rp *CtrlPacket) (int, uint3
     return chunkLen, idx, true
 }
 
-// replaceStream creates a new output stream, initializes it from the old output stream and replaces the old output stream. 
+// replaceStream creates a new output stream, initializes it from the old output stream and replaces the old output stream.
 //
 // The old output stream will then become an input streamm - this handling is called if we have a conflict during
 // collision, loop detection (see algorithm in chap 8.2, RFC 3550).
@@ -632,7 +632,7 @@ func toNtpStamp(tm int64) (seconds, fraction uint32) {
     return
 }
 
-// fromNtp converts a NTP timestamp into GO time 
+// fromNtp converts a NTP timestamp into GO time
 func fromNtp(seconds, fraction uint32) (tm int64) {
     n := (int64(fraction) * 1e9) >> 32
     tm = (int64(seconds)-ntpEpochOffset)*1e9 + n

@@ -1,15 +1,15 @@
 // Copyright (C) 2011 Werner Dittmann
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
@@ -23,7 +23,8 @@ import (
     "fmt"
     "net"
     "time"
-    "net/rtp"
+
+    "github.com/ghettovoice/GoRTP"
 )
 
 var localPort = 5220
@@ -51,9 +52,9 @@ var localZone = ""
 var remoteZone = ""
 
 // Create a RTP packet suitable for standard stream (index 0) with a payload length of 160 bytes
-// The method initializes the RTP packet with SSRC, sequence number, and RTP version number. 
+// The method initializes the RTP packet with SSRC, sequence number, and RTP version number.
 // If the payload type was set with the RTP stream then the payload type is also set in
-// the RTP packet   
+// the RTP packet
 func sendLocalToRemote() {
 
     var cnt int
@@ -165,7 +166,7 @@ func receiveCtrlLocal() {
                 } else {
                     fmt.Println("Local: unexpected nil event")
                 }
-            } 
+            }
         case <-stopLocalCtrl:
             return
         }
@@ -191,7 +192,7 @@ func receiveCtrlRemote() {
                 } else {
                     fmt.Println("Remote: unexpected nil event")
                 }
-            } 
+            }
         case <-stopRemoteCtrl:
             return
         }
@@ -226,8 +227,8 @@ func fullDuplex() {
     // Add address of a remote peer (participant)
     rsLocal.AddRemote(&rtp.Address{remote.IP, remotePort, remotePort + 1, remoteZone})
 
-    // Create a media stream. 
-    // The SSRC identifies the stream. Each stream has its own sequence number and other 
+    // Create a media stream.
+    // The SSRC identifies the stream. Each stream has its own sequence number and other
     // context. A RTP session can have several RTP stream for example to send several
     // streams of the same media.
     //
@@ -286,8 +287,8 @@ func fullDuplexTwoStreams() {
     // Add address of a remote peer (participant)
     rsLocal.AddRemote(&rtp.Address{remote.IP, remotePort, remotePort + 1, remoteZone})
 
-    // Create a media stream. 
-    // The SSRC identifies the stream. Each stream has its own sequence number and other 
+    // Create a media stream.
+    // The SSRC identifies the stream. Each stream has its own sequence number and other
     // context. A RTP session can have several RTP stream for example to send several
     // streams of the same media.
     //
@@ -351,8 +352,8 @@ func simpleRtp() {
     // Add address of a remote peer (participant)
     rsLocal.AddRemote(&rtp.Address{remote.IP, remotePort, remotePort + 1, remoteZone})
 
-    // Create a media stream. 
-    // The SSRC identifies the stream. Each stream has its own sequence number and other 
+    // Create a media stream.
+    // The SSRC identifies the stream. Each stream has its own sequence number and other
     // context. A RTP session can have several RTP stream for example to send several
     // streams of the same media.
     //
@@ -381,7 +382,7 @@ func simpleRtp() {
     time.Sleep(8e9)
 
     stop = true
-    time.Sleep(30e6) // allow the sender to drain 
+    time.Sleep(30e6) // allow the sender to drain
 
     stopRemoteRecv <- true
     stopLocalRecv <- true

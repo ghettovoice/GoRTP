@@ -33,8 +33,8 @@ func initSessions() {
     // Create and store the data receive channel.
     dataReceiver = rsRecv.CreateDataReceiveChan()
 
-    // Create a media stream. 
-    // The SSRC identifies the stream. Each stream has its own sequence number and other 
+    // Create a media stream.
+    // The SSRC identifies the stream. Each stream has its own sequence number and other
     // context. A RTP session can have several RTP stream for example to send several
     // streams of the same media. Need an output stream to test for collisions/loops
     //
@@ -52,7 +52,7 @@ func receivePacket(t *testing.T, num int) {
     select {
     case rp := <-dataReceiver: // just get a packet - maybe we add some tests later
         rp.FreePacket()
-    default: // no packet - should not happen, report this 
+    default: // no packet - should not happen, report this
         t.Errorf("Unexpected case: data receiver channel is empty at %d.\n", num)
     }
 }
@@ -69,10 +69,10 @@ func newSenderPacket(stamp uint32) (rp *DataPacket) {
 }
 
 // The following tests are really white box tests - they check internal variables, manipulate
-// internal variables to get the expected results. 
+// internal variables to get the expected results.
 
 func rtpReceive(t *testing.T) {
-    // ******************** New session setup to have fresh data *************************** 
+    // ******************** New session setup to have fresh data ***************************
     initSessions()
 
     pay := make([]byte, 160)
@@ -84,7 +84,7 @@ func rtpReceive(t *testing.T) {
     strOut := rsSender.SsrcStreamOutForIndex(strIdx)
     strOut.SetPayloadType(0)
 
-    // Test the SDES management stuff 
+    // Test the SDES management stuff
     strOut.SetSdesItem(SdesCname, "AAAAAA")
     strOut.SetSdesItem(SdesEmail, "BBBBBBB")
     if strOut.sdesChunkLen != 24 { // Chunk length does not include SDES header (4 bytes)
@@ -203,7 +203,7 @@ func rtpReceive(t *testing.T) {
         return
     }
 
-    // Create a RTCP compound packet that will contain: one RTCP header, one recvReport, one SDES with 
+    // Create a RTCP compound packet that will contain: one RTCP header, one recvReport, one SDES with
     // chunk length 28 which gives a compound total of 8 + 24 + 28 = 60 bytes
 
     // First get a new ctrl packet and initialize it so that we can "send" it to some internal "receiver" methods.
@@ -276,7 +276,7 @@ func rtpReceive(t *testing.T) {
         return
     }
     // Need to perform a lookup here: with this test we have produced another collision. Now the receiver has three
-    // input streams: one with 0x04030201, one with 0x01020304, one with random SSRC (see test above). This 
+    // input streams: one with 0x04030201, one with 0x01020304, one with random SSRC (see test above). This
     // happened because, for this test, we have produced the control packet from the receiver session and fed that
     // packet into the receiver.
     // The receiver now again has a newly initialized output stream (one only) with new random SSRC and sequence numbers.
@@ -295,7 +295,7 @@ func rtpReceive(t *testing.T) {
         t.Errorf("SDES chunk parsing failed. Expected: 'AAAAAA', got: %s\n", strIn.SdesItems[SdesCname])
         return
     }
-    // The receiver has three input streams: one with 0x04030201, one with 0x01020304, one with random 
+    // The receiver has three input streams: one with 0x04030201, one with 0x01020304, one with random
     // SSRC (see test above) - the latest one with random SSRC is ommited from receiver reports because
     // it was no "active", neither sent or received a packet
 
@@ -310,7 +310,7 @@ func rtpReceive(t *testing.T) {
         return
     }
 
-    // ******************** New session setup to have fresh data *************************** 
+    // ******************** New session setup to have fresh data ***************************
     initSessions()
     // Create a RTP "sender" stream, with defined SSRC, sequence and payload type. Define the sequence number to
     // check second if-path when initalizing the sequence number for input stream
@@ -395,7 +395,7 @@ func rtpReceive(t *testing.T) {
         return
     }
 
-    // ******************** New session setup to have fresh data *************************** 
+    // ******************** New session setup to have fresh data ***************************
     initSessions()
     // Create a RTP "sender" stream, with defined SSRC, sequence and payload type. Define the sequence number to
     // enable checks if sequence number wraps. First use a sequence number near wrap but small enough to go through
@@ -458,7 +458,7 @@ func rtpReceive(t *testing.T) {
     select {
     case <-dataReceiver: // Here we have a lingering packet.
         t.Errorf("Unexpected packet received after all tests done.\n")
-    default: // no packet - should not happen, report this 
+    default: // no packet - should not happen, report this
     }
 }
 
