@@ -799,7 +799,7 @@ func (sc sdesChunk) chunkLen() (int, bool) {
     // Loop over valid items and add their overall length to offset.
     for ; itemType != SdesEnd; itemType = sc[length] {
         length += int(sc[length+1]) + 2 // lenght points to next item type field
-        if length > len(sc) {
+        if length >= len(sc) {
             return 0, false
         }
     }

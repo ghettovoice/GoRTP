@@ -54,6 +54,17 @@ var sdes_1_wrong = []byte{0x81, 202, 0x00, 0x05,
     0x01, 0x03, 0x05, 0x06, 0x07, // CNAME, len=3, content=5,6,7
     0x00, 0x00, 0x00} // END plus 2 padding (chunk length: 12)
 
+// V=2, P=0, chunks=1; PT=SDES; length=11 (48 bytes)
+var sdes_3_3cx = []byte{0x81, 202, 0x00, 0x0b,
+    0x59, 0x76, 0x0f, 0xde, // SSRC 0x59760fde
+    0x01, 0x26, // CNAME, len = 38
+    // content = 00000008@127.0.0.1:548218.196.169.109
+    0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x38, 0x40, 0x31, 0x32, 0x37, 0x2e, 0x30,
+    0x2e, 0x30, 0x2e, 0x31, 0x3a, 0x35, 0x34, 0x38, 0x32, 0x31, 0x38, 0x2e, 0x31, 0x39,
+    0x36, 0x2e, 0x31, 0x36, 0x39, 0x2e, 0x31, 0x30, 0x39, 0x00,
+    // NO END (chunk length: 44)
+}
+
 func sdesCheck(t *testing.T) (result bool) {
     result = false
 
@@ -124,6 +135,25 @@ func sdesCheck(t *testing.T) (result bool) {
     chunkLen, ok := sdesChunk.chunkLen()
     if ok {
         t.Errorf("Chunk length error handling failed, expected: 0, false; got: %d, %v\n", chunkLen, ok)
+        return
+    }
+
+    rp.buffer = sdes_3_3cx
+    cnt = int((rp.Length(0) + 1) * 4) // SDES Length incl. header word
+    if cnt != 48 {
+         t.Error(fmt.Sprintf("Basic sdes_3_3cx SDES length check failed. Expected: 48, got: %d\n", cnt))
+        return
+    }
+    offset = 4
+    // first SDES chunk starts ofter first header word
+    sdesChunk = rp.toSdesChunk(offset, cnt-4)
+    chunkLen, ok = sdesChunk.chunkLen()
+    if chunkLen != 0 {
+        t.Error(fmt.Sprintf("Basic sdes_3_3cx SDES chunk length check failed. Expected: 0, got: %d\n", chunkLen))
+        return
+    }
+    if ok != false {
+        t.Error("Basic sdes_3_3cx SDES chunk error check failed. Expected: false, got: true")
         return
     }
 
