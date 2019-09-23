@@ -279,9 +279,9 @@ func (rs *Session) CloseSession() {
     if rs.rtcpServiceActive {
         rs.rtcpCtrlChan <- rtcpStopService
         for idx := range rs.streamsOut {
-            rs.SsrcStreamCloseForIndex(idx)
+            rs.ssrcStreamCloseForIndex(idx)
         }
-        rs.CloseRecv() // de-activate the transports
+        rs.closeRecv() // de-activate the transports
     }
     return
 }
@@ -433,12 +433,16 @@ func (rs *Session) SsrcStreamCloseForIndex(streamIndex uint32) {
     rs.Lock()
     defer rs.Unlock()
 
+    rs.ssrcStreamCloseForIndex(streamIndex)
+}
+
+func (rs *Session) ssrcStreamCloseForIndex(streamIndex uint32) {
     if rs.rtcpServiceActive {
         rs.streamsMapMutex.Lock()
         str := rs.streamsOut[streamIndex]
         rs.streamsMapMutex.Unlock()
         rc := rs.buildRtcpByePkt(str, "Go RTP says good-bye")
-        rs.WriteCtrl(rc)
+        rs.writeCtrl(rc)
 
         str.streamStatus = isClosing
     }
@@ -480,8 +484,13 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
         rp.FreePacket()
         return false
     }
+
+    rs.Lock()
+    rtcpServiceActive := rs.rtcpServiceActive
+    rs.Unlock()
+
     // Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
-    if rs.rtcpServiceActive {
+    if rtcpServiceActive {
         ssrc := rp.Ssrc()
 
         now := time.Now().UnixNano()
@@ -493,22 +502,38 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
         if !existing {
             str = newSsrcStreamIn(&rp.fromAddr, ssrc)
             if len(rs.streamsIn) > rs.MaxNumberInStreams {
+                rs.Lock()
                 rs.sendDataCtrlEvent(MaxNumInStreamReachedData, ssrc, 0)
+                rs.Unlock()
+
                 rp.FreePacket()
+
                 rs.streamsMapMutex.Unlock()
+                
                 return false
             }
             rs.streamsIn[rs.streamInIndex] = str
             rs.streamInIndex++
             str.streamStatus = active
             str.statistics.initialDataTime = now // First packet arrival time.
+
+            rs.Lock()
             rs.sendDataCtrlEvent(NewStreamData, ssrc, rs.streamInIndex-1)
+            rs.Unlock()
         } else {
             // Check if an existing stream is active
+            str.Lock()
             if str.streamStatus != active {
+                str.Unlock()
+
+                rs.Lock()
                 rs.sendDataCtrlEvent(WrongStreamStatusData, ssrc, rs.streamInIndex-1)
+                rs.Unlock()
+
                 rp.FreePacket()
+
                 rs.streamsMapMutex.Unlock()
+
                 return false
 
             }
@@ -516,23 +541,36 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
             if str.DataPort == 0 {
                 str.DataPort = rp.fromAddr.DataPort
             }
+            str.Unlock()
         }
-        rs.streamsMapMutex.Unlock()
 
         // Before forwarding packet to next upper layer (application) for further processing:
         // 1) check for collisions and loops. If the packet cannot be assigned to a source, it will be rejected.
         // 2) check the source is a sufficiently well known source
         // TODO: also check CSRC identifiers.
+        str.Lock()
         if !str.checkSsrcIncomingData(existing, rs, rp) || !str.recordReceptionData(rp, rs, now) {
+            str.Unlock()
             // must be discarded due to collision or loop or invalid source
+            rs.Lock()
             rs.sendDataCtrlEvent(StreamCollisionLoopData, ssrc, rs.streamInIndex-1)
+            rs.Unlock()
+
             rp.FreePacket()
+            rs.streamsMapMutex.Unlock()
             return false
         }
+        str.Unlock()
+
+        rs.streamsMapMutex.Unlock()
     }
 
+    rs.Lock()
+    dataCh := rs.dataReceiveChan
+    rs.Unlock()
+
     select {
-    case rs.dataReceiveChan <- rp: // forwarded packet, that's all folks
+    case dataCh <- rp: // forwarded packet, that's all folks
     default:
         rp.FreePacket() // either channel full or not created - free packet
     }
@@ -548,8 +586,10 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 // the CtrlEventChan.
 //
 func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
-
-    if !rs.rtcpServiceActive {
+    rs.Lock()
+    rtcpServiceActive := rs.rtcpServiceActive
+    rs.Unlock()
+    if !rtcpServiceActive {
         return true
     }
 
@@ -582,10 +622,14 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
                 //ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
             } else {
                 if !existing {
+                    rs.streamsMapMutex.Lock()
                     ctrlEvArr = append(ctrlEvArr, newCrtlEvent(NewStreamCtrl, str.Ssrc(), rs.streamInIndex-1))
+                    rs.streamsMapMutex.Unlock()
                 }
+                str.Lock()
                 str.statistics.lastRtcpSrTime = str.statistics.lastRtcpPacketTime
                 str.readSenderInfo(rp.toSenderInfo(rtcpHeaderLength + rtcpSsrcLength + offset))
+                str.Unlock()
 
                 ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpSR, str.Ssrc(), strIdx))
 
@@ -594,10 +638,14 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 
                 for i := 0; i < rrCnt; i++ {
                     rr := rp.toRecvReport(rrOffset)
+                    rs.streamsMapMutex.Lock()
                     strOut, idx, exists := rs.lookupSsrcMapOut(rr.ssrc())
+                    rs.streamsMapMutex.Unlock()
                     // Process Receive Reports that match own output streams (SSRC).
                     if exists {
+                        strOut.Lock()
                         strOut.readRecvReport(rr)
+                        strOut.Unlock()
                         ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpRR, rr.ssrc(), idx))
                     }
                     rrOffset += reportBlockLen
@@ -621,7 +669,9 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
                 //ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
             } else {
                 if !existing {
+                    rs.streamsMapMutex.Lock()
                     ctrlEvArr = append(ctrlEvArr, newCrtlEvent(NewStreamCtrl, str.Ssrc(), rs.streamInIndex-1))
+                    rs.streamsMapMutex.Unlock()
                 }
 
                 rrCnt := rp.Count(offset)
@@ -629,10 +679,14 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
                 rrOffset := offset + rtcpHeaderLength + rtcpSsrcLength
                 for i := 0; i < rrCnt; i++ {
                     rr := rp.toRecvReport(rrOffset)
+                    rs.streamsMapMutex.Lock()
                     strOut, idx, exists := rs.lookupSsrcMapOut(rr.ssrc())
+                    rs.streamsMapMutex.Unlock()
                     // Process Receive Reports that match own output streams (SSRC)
                     if exists {
+                        strOut.Lock()
                         strOut.readRecvReport(rr)
+                        strOut.Unlock()
                         ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpRR, rr.ssrc(), idx))
                     }
                     rrOffset += reportBlockLen
@@ -654,7 +708,9 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
                 if chunk == nil {
                     break
                 }
+                rs.Lock()
                 chunkLen, idx, ok := rs.processSdesChunk(chunk, rp)
+                rs.Unlock()
                 if !ok {
                     break
                 }
@@ -676,11 +732,15 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
             byePkt := rp.toByeData(offset+4, pktLen-4)
             if byePkt != nil {
                 // Send BYE control event only for known input streams.
+                rs.Lock()
+                rs.streamsMapMutex.Lock()
                 if st, idx, ok := rs.lookupSsrcMapIn(byePkt.ssrc(0)); ok {
                     ctrlEv := newCrtlEvent(RtcpBye, byePkt.ssrc(0), idx)
                     ctrlEv.Reason = byePkt.getReason(byeCnt)
                     ctrlEvArr = append(ctrlEvArr, ctrlEv)
+                    st.Lock()
                     st.streamStatus = isClosing
+                    st.Unlock()
                 }
                 // Recompute time intervals, see chapter 6.3.4
                 // TODO: not len(rs.streamsIn) but get number of members with streamStatus == active
@@ -689,6 +749,8 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
                 tc := float64(time.Now().UnixNano())
                 tn := tc + members/pmembers*(float64(rs.tnext)-tc)
                 rs.tnext = int64(tn)
+                rs.streamsMapMutex.Unlock()
+                rs.Unlock()
             }
             // Advance to the next packet in the compound.
             offset += pktLen
@@ -708,14 +770,22 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 
         }
     }
+
+    rs.Lock()
+    ctrlCh := rs.ctrlEventChan
+    rs.Unlock()
+
     select {
-    case rs.ctrlEventChan <- ctrlEvArr: // send control event
+    case ctrlCh <- ctrlEvArr: // send control event
     default:
     }
     // re-compute average packet size. Don't re-compute RTCP interval time, will be done on next RTCP report
     // interval. The timing is not affected that much by delaying the interval re-computation.
     size := float64(rp.InUse() + 20 + 8) // TODO: get real values for IP and transport from transport module
+    
+    rs.Lock()
     rs.avrgPacketLength = (1.0/16.0)*size + (15.0/16.0)*rs.avrgPacketLength
+    rs.Unlock()
 
     rp.FreePacket()
     ctrlEvArr = nil
@@ -732,6 +802,13 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 // Only relevant if an application uses "simple RTP".
 //
 func (rs *Session) CloseRecv() {
+    rs.Lock()
+    defer rs.Unlock()
+
+    rs.closeRecv()
+}
+
+func (rs *Session) closeRecv() {
     if rs.transportRecv != nil {
         rs.transportRecv.CloseRecv()
         for allClosed := 0; allClosed != (DataTransportRecvStopped | CtrlTransportRecvStopped); {
@@ -751,6 +828,9 @@ func (rs *Session) CloseRecv() {
 // Only relevant if an application uses "simple RTP".
 //
 func (rs *Session) SetEndChannel(ch TransportEnd) {
+    rs.Lock()
+    defer rs.Unlock()
+
     rs.transportEndUpper = ch
 }
 
@@ -764,13 +844,25 @@ func (rs *Session) SetEndChannel(ch TransportEnd) {
 // This functions updates some statistical values to enable RTCP processing.
 //
 func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
+    rs.Lock()
+    defer rs.Unlock()
 
+    return rs.writeData(rp)
+}
+
+func (rs *Session) writeData(rp *DataPacket) (n int, err error) {
+    rs.streamsMapMutex.Lock()
     strOut, _, _ := rs.lookupSsrcMapOut(rp.Ssrc())
+    rs.streamsMapMutex.Unlock()
+
+    strOut.Lock()
     if strOut.streamStatus != active {
+        strOut.Unlock()
         return 0, nil
     }
     strOut.SenderPacketCnt++
     strOut.SenderOctectCnt += uint32(len(rp.Payload()))
+    strOut.Unlock()
 
     strOut.streamMutex.Lock()
     if !strOut.sender && rs.rtcpCtrlChan != nil {
@@ -779,6 +871,7 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
     }
     strOut.statistics.lastPacketTime = time.Now().UnixNano()
     strOut.streamMutex.Unlock()
+
     rs.weSent = true
 
     // Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
@@ -788,6 +881,7 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
             return 0, err
         }
     }
+    
     return n, nil
 }
 
@@ -797,17 +891,31 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 // Usually normal applications don't use this function, RTCP is handled internally.
 //
 func (rs *Session) WriteCtrl(rp *CtrlPacket) (n int, err error) {
+    rs.Lock()
+    defer rs.Unlock()
 
+    return rs.writeCtrl(rp)
+}
+
+func (rs *Session) writeCtrl(rp *CtrlPacket) (n int, err error) {
     // Check here if SRTCP is enabled for the SSRC of the packet - a stream attribute
+    rs.streamsMapMutex.Lock()
     strOut, _, _ := rs.lookupSsrcMapOut(rp.Ssrc(0))
+    rs.streamsMapMutex.Unlock()
+
+    strOut.Lock()
     if strOut.streamStatus != active {
+        strOut.Unlock()
         return 0, nil
     }
+    strOut.Unlock()
+
     for _, remote := range rs.remotes {
         _, err := rs.transportWrite.WriteCtrlTo(rp, remote)
         if err != nil {
             return 0, err
         }
     }
+
     return n, nil
 }

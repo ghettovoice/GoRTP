@@ -85,10 +85,17 @@ func (rs *Session) rtcpService(ti, td int64) {
     ssrcTimeout := 5 * td
     dataTimeout := 2 * ti
 
+    rs.Lock()
     rs.rtcpServiceActive = true
+    rs.Unlock()
+
     ticker := time.NewTicker(granularity)
     var cmd uint32
     for cmd != rtcpStopService {
+        rs.Lock()
+        rtcpCtrlChan := rs.rtcpCtrlChan
+        rs.Unlock()
+
         select {
         case <-ticker.C:
             now := time.Now().UnixNano()
@@ -99,7 +106,12 @@ func (rs *Session) rtcpService(ti, td int64) {
             var outActive, inActive int // Counts all members in active state
             var inActiveSinceLastRR int
 
-            for idx, str := range rs.streamsIn {
+            rs.streamsMapMutex.Lock()
+            streamsIn := rs.streamsIn
+            rs.streamsMapMutex.Unlock()
+
+            for idx, str := range streamsIn {
+                str.Lock()
                 switch str.streamStatus {
                 case active:
                     str.streamMutex.Lock()
@@ -114,9 +126,11 @@ func (rs *Session) rtcpService(ti, td int64) {
                         }
                         if rtpDiff > dataTimeout {
                             str.sender = false
+                            rs.Lock()
                             if rs.activeSenders > 0 {
                                 rs.activeSenders--
                             }
+                            rs.Unlock()
                         }
                     }
                     // SSRC timeout processing: check for inactivity longer than 5*non-random interval time
@@ -126,7 +140,9 @@ func (rs *Session) rtcpService(ti, td int64) {
                         rtpDiff = rtcpDiff
                     }
                     if rtpDiff > ssrcTimeout {
+                        rs.streamsMapMutex.Lock()
                         delete(rs.streamsIn, idx)
+                        rs.streamsMapMutex.Unlock()
                     }
                     str.streamMutex.Unlock()
 
@@ -134,15 +150,23 @@ func (rs *Session) rtcpService(ti, td int64) {
                     str.streamStatus = isClosed
 
                 case isClosed:
+                    rs.streamsMapMutex.Lock()
                     delete(rs.streamsOut, idx)
+                    rs.streamsMapMutex.Unlock()
                 }
+                str.Unlock()
             }
 
             var rc *CtrlPacket
             var streamForRR *SsrcStream
             var outputSenders int
 
-            for idx, str := range rs.streamsOut {
+            rs.streamsMapMutex.Lock()
+            streamsOut := rs.streamsOut
+            rs.streamsMapMutex.Unlock()
+
+            for idx, str := range streamsOut {
+                str.Lock()
                 switch str.streamStatus {
                 case active:
                     outActive++
@@ -160,39 +184,51 @@ func (rs *Session) rtcpService(ti, td int64) {
                         if rtpDiff > dataTimeout {
                             str.sender = false
                             outputSenders--
+                            rs.Lock()
                             if rs.activeSenders > 0 {
                                 rs.activeSenders--
                             }
+                            rs.Unlock()
                         }
                     }
                     str.streamMutex.Unlock()
                     if str.sender {
+                        rs.Lock()
                         if rc == nil {
                             rc = rs.buildRtcpPkt(str, inActiveSinceLastRR)
                         } else {
                             rs.addSenderReport(str, rc)
                         }
+                        rs.Unlock()
                     }
 
                 case isClosing:
                     str.streamStatus = isClosed
 
                 case isClosed:
+                    rs.streamsMapMutex.Lock()
                     delete(rs.streamsOut, idx)
+                    rs.streamsMapMutex.Unlock()
                 }
+                str.Unlock()
             }
             // If no active output stream is left then weSent becomes false
+            rs.Lock()
             rs.weSent = outputSenders > 0
+            rs.Unlock()
 
             // if rc is nil then we found no sending stream and havent't build a control packet. Just use
             // one active output stream as proxy to create at least an RR and the proxy's SDES (RR may be
             // empty as well). If also no active output stream - don't create and send RTCP report. In this
             // case the RTP stack in completey inactive.
             if rc == nil && streamForRR != nil {
+                rs.Lock()
                 rc = rs.buildRtcpPkt(streamForRR, inActiveSinceLastRR)
+                rs.Unlock()
             }
             if rc != nil {
                 rs.WriteCtrl(rc)
+                rs.Lock()
                 rs.tprev = now
                 size := float64(rc.InUse() + 20 + 8) // TODO: get real values for IP and transport from transport module
                 rs.avrgPacketLength = (1.0/16.0)*size + (15.0/16.0)*rs.avrgPacketLength
@@ -202,12 +238,13 @@ func (rs *Session) rtcpService(ti, td int64) {
                 rs.tnext = ti + now
                 dataTimeout = 2 * ti
                 ssrcTimeout = 5 * td
+                rs.Unlock()
                 rc.FreePacket()
             }
             outActive = 0
             inActive = 0
 
-        case cmd = <-rs.rtcpCtrlChan:
+        case cmd = <-rtcpCtrlChan:
             switch cmd & rtcpCtrlCmdMask {
             case rtcpStopService:
                 ticker.Stop()
@@ -218,11 +255,15 @@ func (rs *Session) rtcpService(ti, td int64) {
                 ticker = time.NewTicker(granularity)
 
             case rtcpIncrementSender:
+                rs.Lock()
                 rs.activeSenders++
+                rs.Unlock()
             }
         }
     }
+    rs.Lock()
     rs.rtcpServiceActive = false
+    rs.Unlock()
 }
 
 // buildRtcpPkt creates an RTCP compound and fills it with a SR or RR packet.
@@ -351,24 +392,40 @@ func (rs *Session) rtcpSenderCheck(rp *CtrlPacket, offset int) (*SsrcStream, uin
         rs.streamsIn[rs.streamInIndex] = str
         rs.streamInIndex++
     } else {
+        str.Lock()
         // Check if an existing stream is active
         if str.streamStatus != active {
+            str.Unlock()
+
             rs.streamsMapMutex.Unlock()
+
             return nil, WrongStreamStatusCtrl, false
         }
         // Test if RTP packets had been received but this is the first control packet from this source.
         if str.CtrlPort == 0 {
             str.CtrlPort = rp.fromAddr.CtrlPort
         }
-    }
-    rs.streamsMapMutex.Unlock()
 
+        str.Unlock()
+    }
+
+    str.Lock()
     // Check if sender's SSRC collides or loops
     if !str.checkSsrcIncomingCtrl(existing, rs, &rp.fromAddr) {
+        str.Unlock()
+        rs.streamsMapMutex.Unlock()
+        
         return nil, StreamCollisionLoopCtrl, false
     }
+    str.Unlock()
+
     // record reception time
+    str.Lock()
     str.statistics.lastRtcpPacketTime = time.Now().UnixNano()
+    str.Unlock()
+    
+    rs.streamsMapMutex.Unlock()
+
     return str, strIdx, existing
 }
 
