@@ -96,6 +96,8 @@ type RecvReportData struct {
 }
 
 type SsrcStream struct {
+    sync.Mutex
+
     streamType   int
     streamStatus int
     streamMutex  sync.Mutex
@@ -135,11 +137,17 @@ const seqNumMod = (1 << 16)
 
 // Ssrc returns the SSRC of this stream in host order.
 func (str *SsrcStream) Ssrc() uint32 {
+    str.Lock()
+    defer str.Unlock()
+
     return str.ssrc
 }
 
 // SequenceNo returns the current RTP packet sequence number of this stream in host order.
 func (str *SsrcStream) SequenceNo() uint16 {
+    str.Lock()
+    defer str.Unlock()
+
     return str.sequenceNumber
 }
 
@@ -156,6 +164,9 @@ func (str *SsrcStream) SequenceNo() uint16 {
 //  pt - the payload type number.
 //
 func (str *SsrcStream) SetPayloadType(pt byte) (ok bool) {
+    str.Lock()
+    defer str.Unlock()
+
     if _, ok = PayloadFormatMap[int(pt)]; !ok {
         return
     }
@@ -165,6 +176,8 @@ func (str *SsrcStream) SetPayloadType(pt byte) (ok bool) {
 
 // PayloadType returns the payload type of this stream.
 func (str *SsrcStream) PayloadType() byte {
+    str.Lock()
+    defer str.Unlock()
     return str.payloadType
 }
 
@@ -172,6 +185,8 @@ func (str *SsrcStream) PayloadType() byte {
 // StreamType returns stream's type, either input stream or otput stream.
 //
 func (str *SsrcStream) StreamType() int {
+    str.Lock()
+    defer str.Unlock()
     return str.streamType
 }
 
