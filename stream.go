@@ -589,7 +589,6 @@ func (si *SsrcStream) checkSsrcIncomingCtrl(existingStream bool, rs *Session, fr
 // See chapter A.3 in RFC 3550 regarding the packet lost algorithm, end of chapter 6.4.1 regarding LSR, DLSR stuff.
 //
 func (si *SsrcStream) makeRecvReport(rp *CtrlPacket) (newOffset int) {
-
     report, newOffset := rp.newRecvReport()
 
     extMaxSeq := si.statistics.seqNumAccum + uint32(si.statistics.maxSeqNum)

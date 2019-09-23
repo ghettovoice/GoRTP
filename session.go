@@ -31,6 +31,8 @@ import (
 // Session contols and manages the resources and actions of a RTP session.
 //
 type Session struct {
+    sync.Mutex
+
     RtcpTransmission        // Data structure to control and manage RTCP reports.
     MaxNumberOutStreams int // Applications may set this to increase the number of supported output streams
     MaxNumberInStreams  int // Applications may set this to increase the number of supported input streams
@@ -169,6 +171,9 @@ func NewSession(tpw TransportWrite, tpr TransportRecv) *Session {
 //   remote - the RTP address of the remote peer. The RTP data port number must be even.
 //
 func (rs *Session) AddRemote(remote *Address) (index uint32, err error) {
+    rs.Lock()
+    defer rs.Unlock()
+
     if (remote.DataPort & 0x1) == 0x1 {
         return 0, Error("RTP data port number is not an even number.")
     }
@@ -181,6 +186,9 @@ func (rs *Session) AddRemote(remote *Address) (index uint32, err error) {
 // RemoveRemote removes the address at the specified index.
 //
 func (rs *Session) RemoveRemote(index uint32) {
+    rs.Lock()
+    defer rs.Unlock()
+
     delete(rs.remotes, index)
 }
 
@@ -201,6 +209,8 @@ func (rs *Session) RemoveRemote(index uint32) {
 //                to RFC 3550
 //
 func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16) (index uint32, err Error) {
+    rs.Lock()
+    defer rs.Unlock()
 
     if len(rs.streamsOut) > rs.MaxNumberOutStreams {
         return 0, Error("Maximum number of output streams reached.")
@@ -229,6 +239,9 @@ func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16
 // reports to it's remote peers.
 //
 func (rs *Session) StartSession() (err error) {
+    rs.Lock()
+    defer rs.Unlock()
+
     err = rs.ListenOnTransports() // activate the transports
     if err != nil {
         return
@@ -260,6 +273,9 @@ func (rs *Session) StartSession() (err error) {
 // closes the receiver transports,
 //
 func (rs *Session) CloseSession() {
+    rs.Lock()
+    defer rs.Unlock()
+
     if rs.rtcpServiceActive {
         rs.rtcpCtrlChan <- rtcpStopService
         for idx := range rs.streamsOut {
@@ -286,6 +302,9 @@ func (rs *Session) CloseSession() {
 //   stamp - the RTP timestamp for this packet.
 //
 func (rs *Session) NewDataPacket(stamp uint32) *DataPacket {
+    rs.streamsMapMutex.Lock()
+    defer rs.streamsMapMutex.Unlock()
+
     str := rs.streamsOut[0]
     return str.newDataPacket(stamp)
 }
@@ -300,6 +319,9 @@ func (rs *Session) NewDataPacket(stamp uint32) *DataPacket {
 //   stamp       - the RTP timestamp for this packet.
 //
 func (rs *Session) NewDataPacketForStream(streamIndex uint32, stamp uint32) *DataPacket {
+    rs.streamsMapMutex.Lock()
+    defer rs.streamsMapMutex.Unlock()
+
     str := rs.streamsOut[streamIndex]
     return str.newDataPacket(stamp)
 }
@@ -310,6 +332,9 @@ func (rs *Session) NewDataPacketForStream(streamIndex uint32, stamp uint32) *Dat
 // If the channel is full then the RTP receiver discards the data packets.
 //
 func (rs *Session) CreateDataReceiveChan() DataReceiveChan {
+    rs.Lock()
+    defer rs.Unlock()
+
     rs.dataReceiveChan = make(DataReceiveChan, dataReceiveChanLen)
     return rs.dataReceiveChan
 }
@@ -319,6 +344,9 @@ func (rs *Session) CreateDataReceiveChan() DataReceiveChan {
 // The receiver discards all received packets.
 //
 func (rs *Session) RemoveDataReceiveChan() {
+    rs.Lock()
+    defer rs.Unlock()
+
     rs.dataReceiveChan = nil
 }
 
@@ -328,6 +356,9 @@ func (rs *Session) RemoveDataReceiveChan() {
 // If the channel is full then the RTCP receiver does not send control events.
 //
 func (rs *Session) CreateCtrlEventChan() CtrlEventChan {
+    rs.Lock()
+    defer rs.Unlock()
+
     rs.ctrlEventChan = make(CtrlEventChan, ctrlEventChanLen)
     return rs.ctrlEventChan
 }
@@ -335,12 +366,18 @@ func (rs *Session) CreateCtrlEventChan() CtrlEventChan {
 // RemoveCtrlEventChan deletes the control event channel.
 //
 func (rs *Session) RemoveCtrlEventChan() {
+    rs.Lock()
+    defer rs.Unlock()
+
     rs.ctrlEventChan = nil
 }
 
 // SsrcStreamOut gets the standard output stream.
 //
 func (rs *Session) SsrcStreamOut() *SsrcStream {
+    rs.streamsMapMutex.Lock()
+    defer rs.streamsMapMutex.Unlock()
+
     return rs.streamsOut[0]
 }
 
@@ -349,12 +386,18 @@ func (rs *Session) SsrcStreamOut() *SsrcStream {
 //   streamindex - the index of the output stream as returned by NewSsrcStreamOut
 //
 func (rs *Session) SsrcStreamOutForIndex(streamIndex uint32) *SsrcStream {
+    rs.streamsMapMutex.Lock()
+    defer rs.streamsMapMutex.Unlock()
+
     return rs.streamsOut[streamIndex]
 }
 
 // SsrcStreamIn gets the standard input stream.
 //
 func (rs *Session) SsrcStreamIn() *SsrcStream {
+    rs.streamsMapMutex.Lock()
+    defer rs.streamsMapMutex.Unlock()
+
     return rs.streamsIn[0]
 }
 
@@ -363,6 +406,9 @@ func (rs *Session) SsrcStreamIn() *SsrcStream {
 //   streamindex - the index of the output stream as returned by NewSsrcStreamOut
 //
 func (rs *Session) SsrcStreamInForIndex(streamIndex uint32) *SsrcStream {
+    rs.streamsMapMutex.Lock()
+    defer rs.streamsMapMutex.Unlock()
+
     return rs.streamsIn[streamIndex]
 }
 
@@ -384,8 +430,13 @@ func (rs *Session) SsrcStreamClose() {
 //   streamindex - the index of the output stream as returned by NewSsrcStreamOut
 //
 func (rs *Session) SsrcStreamCloseForIndex(streamIndex uint32) {
+    rs.Lock()
+    defer rs.Unlock()
+
     if rs.rtcpServiceActive {
+        rs.streamsMapMutex.Lock()
         str := rs.streamsOut[streamIndex]
+        rs.streamsMapMutex.Unlock()
         rc := rs.buildRtcpByePkt(str, "Go RTP says good-bye")
         rs.WriteCtrl(rc)
 
@@ -425,13 +476,11 @@ func (rs *Session) ListenOnTransports() (err error) {
 // Delegating is not yet implemented. Applications receive data via the DataReceiveChan.
 //
 func (rs *Session) OnRecvData(rp *DataPacket) bool {
-
     if !rp.IsValid() {
         rp.FreePacket()
         return false
     }
     // Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
-
     if rs.rtcpServiceActive {
         ssrc := rp.Ssrc()
 
@@ -481,6 +530,7 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
             return false
         }
     }
+
     select {
     case rs.dataReceiveChan <- rp: // forwarded packet, that's all folks
     default:
