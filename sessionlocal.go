@@ -99,9 +99,12 @@ func (rs *Session) rtcpService(ti, td int64) {
         select {
         case <-ticker.C:
             now := time.Now().UnixNano()
+            rs.Lock()
             if now < rs.tnext {
+                rs.Unlock()
                 continue
             }
+            rs.Unlock()
 
             var outActive, inActive int // Counts all members in active state
             var inActiveSinceLastRR int
@@ -279,14 +282,14 @@ func (rs *Session) buildRtcpPkt(strOut *SsrcStream, inStreamCnt int) (rc *CtrlPa
     var pktLen, offset int
     if strOut.sender {
         rc, offset = strOut.newCtrlPacket(RtcpSR)
-        offset = rc.addHeaderSsrc(offset, strOut.Ssrc())
+        offset = rc.addHeaderSsrc(offset, strOut.ssrc)
 
         var info senderInfo
         info, offset = rc.newSenderInfo()
         strOut.fillSenderInfo(info) // create a sender info block after fixed header and SSRC.
     } else {
         rc, offset = strOut.newCtrlPacket(RtcpRR)
-        offset = rc.addHeaderSsrc(offset, strOut.Ssrc())
+        offset = rc.addHeaderSsrc(offset, strOut.ssrc)
     }
     pktLen = offset/4 - 1
     // TODO Handle round-robin if we have more then 31 really active input streams (chap 6.4)
