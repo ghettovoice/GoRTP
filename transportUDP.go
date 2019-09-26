@@ -98,6 +98,9 @@ func (tp *TransportUDP) CloseRecv() {
     // stop flags to true. However, until issue 2116 is solved just set the flags
     // and rely on the read timeout in the read packet functions
     //
+    tp.Lock()
+    defer tp.Unlock()
+
     tp.dataRecvStop = true
     tp.ctrlRecvStop = true
 
@@ -149,16 +152,25 @@ func (tp *TransportUDP) CloseWrite() {
 func (tp *TransportUDP) readDataPacket() {
     var buf [defaultBufferSize]byte
 
+    tp.Lock()
     tp.dataRecvStop = false
+    tp.Unlock()
+
     for {
 //        deadLineErr := tp.dataConn.SetReadDeadline(time.Now().Add(20 * time.Millisecond)) // 20 ms, re-test and remove after Go issue 2116 is solved
         n, addr, err := tp.dataConn.ReadFromUDP(buf[0:])
+        
+        tp.Lock()
         if tp.dataRecvStop {
+            tp.Unlock()
             break
         }
+        tp.Unlock()
+
         if err != nil {
             break
         }
+
         rp := newDataPacket()
         rp.fromAddr.IpAddr = addr.IP
         rp.fromAddr.DataPort = addr.Port
@@ -177,13 +189,21 @@ func (tp *TransportUDP) readDataPacket() {
 func (tp *TransportUDP) readCtrlPacket() {
     var buf [defaultBufferSize]byte
 
+    tp.Lock()
     tp.ctrlRecvStop = false
+    tp.Unlock()
+
     for {
 //        tp.dataConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)) // 100 ms, re-test and remove after Go issue 2116 is solved
         n, addr, err := tp.ctrlConn.ReadFromUDP(buf[0:])
+
+        tp.Lock()
         if tp.ctrlRecvStop {
+            tp.Unlock()
             break
         }
+        tp.Unlock()
+
         if err != nil {
             break
         }

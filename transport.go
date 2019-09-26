@@ -18,6 +18,10 @@
 
 package rtp
 
+import (
+    "sync"
+)
+
 type TransportRecv interface {
     ListenOnTransports() error
     OnRecvData(rp *DataPacket) bool
@@ -35,6 +39,7 @@ type TransportWrite interface {
 }
 
 type TransportCommon struct {
+    sync.Mutex
     transportEnd TransportEnd
     dataRecvStop,
     ctrlRecvStop,
