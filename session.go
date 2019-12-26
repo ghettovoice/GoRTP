@@ -276,13 +276,12 @@ func (rs *Session) CloseSession() {
 	rs.Lock()
 	defer rs.Unlock()
 
-	rs.streamsMapMutex.Lock()
-	defer rs.streamsMapMutex.Unlock()
-
 	if rs.rtcpServiceActive {
 		rs.rtcpCtrlChan <- rtcpStopService
 		for idx := range rs.streamsOut {
+			rs.streamsMapMutex.Lock()
 			rs.ssrcStreamCloseForIndex(idx)
+			rs.streamsMapMutex.Unlock()
 		}
 		rs.closeRecv() // de-activate the transports
 	}
@@ -507,23 +506,26 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 
 		rs.streamsMapMutex.Lock()
 		str, _, existing := rs.lookupSsrcMap(ssrc)
-
+		rs.streamsMapMutex.Unlock()
 		// if not found in the input stream then create a new SSRC input stream
 		if !existing {
 			str = newSsrcStreamIn(&rp.fromAddr, ssrc)
+			rs.streamsMapMutex.Lock()
 			if len(rs.streamsIn) > rs.MaxNumberInStreams {
+				rs.streamsMapMutex.Unlock()
+
 				rs.Lock()
 				rs.sendDataCtrlEvent(MaxNumInStreamReachedData, ssrc, 0)
 				rs.Unlock()
 
 				rp.FreePacket()
 
-				rs.streamsMapMutex.Unlock()
-
 				return false
 			}
 			rs.streamsIn[rs.streamInIndex] = str
 			rs.streamInIndex++
+			rs.streamsMapMutex.Unlock()
+
 			str.streamStatus = active
 			str.statistics.initialDataTime = now // First packet arrival time.
 
@@ -542,8 +544,6 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 
 				rp.FreePacket()
 
-				rs.streamsMapMutex.Unlock()
-
 				return false
 
 			}
@@ -560,18 +560,15 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 		// TODO: also check CSRC identifiers.
 		rs.Lock()
 		if !str.checkSsrcIncomingData(existing, rs, rp) || !str.recordReceptionData(rp, rs, now) {
-			rs.Unlock()
 			// must be discarded due to collision or loop or invalid source
-			rs.Lock()
 			rs.sendDataCtrlEvent(StreamCollisionLoopData, ssrc, rs.streamInIndex-1)
 			rs.Unlock()
 
 			rp.FreePacket()
-			rs.streamsMapMutex.Unlock()
+
 			return false
 		}
 		rs.Unlock()
-		rs.streamsMapMutex.Unlock()
 	}
 
 	rs.Lock()
@@ -636,8 +633,10 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 					rs.streamsMapMutex.Unlock()
 				}
 				str.Lock()
+				str.streamMutex.Lock()
 				str.statistics.lastRtcpSrTime = str.statistics.lastRtcpPacketTime
 				str.readSenderInfo(rp.toSenderInfo(rtcpHeaderLength + rtcpSsrcLength + offset))
+				str.streamMutex.Unlock()
 				str.Unlock()
 
 				ctrlEvArr = append(ctrlEvArr, newCrtlEvent(RtcpSR, str.Ssrc(), strIdx))
@@ -872,7 +871,6 @@ func (rs *Session) writeData(rp *DataPacket) (n int, err error) {
 	}
 	strOut.SenderPacketCnt++
 	strOut.SenderOctectCnt += uint32(len(rp.Payload()))
-	strOut.Unlock()
 
 	strOut.streamMutex.Lock()
 	if !strOut.sender && rs.rtcpCtrlChan != nil {
@@ -881,6 +879,7 @@ func (rs *Session) writeData(rp *DataPacket) (n int, err error) {
 	}
 	strOut.statistics.lastPacketTime = time.Now().UnixNano()
 	strOut.streamMutex.Unlock()
+	strOut.Unlock()
 
 	rs.weSent = true
 

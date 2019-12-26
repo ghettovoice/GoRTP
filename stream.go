@@ -398,16 +398,21 @@ func (si *SsrcStream) checkSsrcIncomingData(existingStream bool, rs *Session, rp
 	si.Lock()
 	// Test if the source is new and its SSRC is not already used in an output stream.
 	// Thus a new input stream without collision.
+	rs.streamsMapMutex.Lock()
 	if !existingStream && !rs.isOutputSsrc(si.ssrc) {
 		si.Unlock()
+		rs.streamsMapMutex.Unlock()
 		return result
 	}
+	rs.streamsMapMutex.Unlock()
 
 	// Found an existing input stream. Check if it is still same address/port.
 	// if yes, no conflicts, no further checks required.
 	if si.DataPort != rp.fromAddr.DataPort || !si.IpAddr.Equal(rp.fromAddr.IpAddr) {
 		// SSRC collision or a loop has happened
+		rs.streamsMapMutex.Lock()
 		strOut, _, localSsrc := rs.lookupSsrcMapOut(si.ssrc)
+		rs.streamsMapMutex.Unlock()
 		if !localSsrc { // Not a SSRC in use for own output (local SSRC)
 			// TODO: Optional error counter: Known SSRC stream changed address or port
 			// Note this differs from the default in the RFC. Discard packet only when the collision is
@@ -533,7 +538,10 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 		}
 		si.statistics.lastPacketTime = recvTime
 		if !si.sender && rs.rtcpCtrlChan != nil {
-			rs.rtcpCtrlChan <- rtcpIncrementSender
+			select {
+			case rs.rtcpCtrlChan <- rtcpIncrementSender:
+			default:
+			}
 		}
 		si.sender = true // Stream is sender. If it was false new stream or no RTP packets for some time
 		si.dataAfterLastReport = true
@@ -564,16 +572,21 @@ func (si *SsrcStream) checkSsrcIncomingCtrl(existingStream bool, rs *Session, fr
 	// Test if the source is new and its SSRC is not already used in an output stream.
 	// Thus a new input stream without collision.
 	si.Lock()
+	rs.streamsMapMutex.Lock()
 	if !existingStream && !rs.isOutputSsrc(si.ssrc) {
 		si.Unlock()
+		rs.streamsMapMutex.Unlock()
 		return result
 	}
+	rs.streamsMapMutex.Unlock()
 
 	// Found an existing input stream. Check if it is still same address/port.
 	// if yes, no conflicts, no further checks required.
 	if si.CtrlPort != from.CtrlPort || !si.IpAddr.Equal(from.IpAddr) {
 		// SSRC collision or a loop has happened
+		rs.streamsMapMutex.Lock()
 		strOut, _, localSsrc := rs.lookupSsrcMapOut(si.ssrc)
+		rs.streamsMapMutex.Unlock()
 		if !localSsrc { // Not a SSRC in use for own output (local SSRC)
 			// TODO: Optional error counter: Know SSRC stream changed address or port
 			// Note this differs from the default in the RFC. Discard packet only when the collision is
