@@ -92,44 +92,51 @@ func (rs *Session) rtcpService(ti, td int64) {
 	ticker := time.NewTicker(granularity)
 	var cmd uint32
 	for cmd != rtcpStopService {
-		rs.Lock()
+		rs.RLock()
 		rtcpCtrlChan := rs.rtcpCtrlChan
-		rs.Unlock()
+		rs.RUnlock()
 
 		select {
 		case <-ticker.C:
 			now := time.Now().UnixNano()
-			rs.Lock()
+			rs.RLock()
 			if now < rs.tnext {
-				rs.Unlock()
+				rs.RUnlock()
 				continue
 			}
-			rs.Unlock()
+			rs.RUnlock()
 
 			var outActive, inActive int // Counts all members in active state
 			var inActiveSinceLastRR int
 
-			rs.streamsMapMutex.Lock()
+			rs.streamsMapMutex.RLock()
 			streamsIn := rs.streamsIn
-			rs.streamsMapMutex.Unlock()
+			rs.streamsMapMutex.RUnlock()
 
 			for idx, str := range streamsIn {
-				str.Lock()
+				str.RLock()
 				switch str.streamStatus {
 				case active:
 					// Manage number of active senders on input streams.
 					// Every time this stream receives a packet it updates the last packet time. If the input stream
 					// did not receive a RTP packet for 2 RTCP intervals its sender status is set to false and the
 					// number of active senders in this session is decremented if not already zero. See chapter 6.3.5
-					str.streamMutex.Lock()
+					str.streamMutex.RLock()
 					rtpDiff := now - str.statistics.lastPacketTime
-					str.streamMutex.Unlock()
+					str.streamMutex.RUnlock()
 					if str.sender {
 						if str.dataAfterLastReport {
 							inActiveSinceLastRR++
 						}
 						if rtpDiff > dataTimeout {
+							str.RUnlock()
+
+							str.Lock()
 							str.sender = false
+							str.Unlock()
+
+							str.RLock()
+
 							rs.Lock()
 							if rs.activeSenders > 0 {
 								rs.activeSenders--
@@ -139,9 +146,9 @@ func (rs *Session) rtcpService(ti, td int64) {
 					}
 					// SSRC timeout processing: check for inactivity longer than 5*non-random interval time
 					// (both RTP/RTCP inactivity) chapter 6.3.5
-					str.streamMutex.Lock()
+					str.streamMutex.RLock()
 					rtcpDiff := now - str.statistics.lastRtcpPacketTime
-					str.streamMutex.Unlock()
+					str.streamMutex.RUnlock()
 					if rtpDiff > rtcpDiff {
 						rtpDiff = rtcpDiff
 					}
@@ -152,26 +159,31 @@ func (rs *Session) rtcpService(ti, td int64) {
 					}
 
 				case isClosing:
-					str.streamStatus = isClosed
+					str.RUnlock()
 
+					str.Lock()
+					str.streamStatus = isClosed
+					str.Unlock()
+
+					str.RLock()
 				case isClosed:
 					rs.streamsMapMutex.Lock()
 					delete(rs.streamsOut, idx)
 					rs.streamsMapMutex.Unlock()
 				}
-				str.Unlock()
+				str.RUnlock()
 			}
 
 			var rc *CtrlPacket
 			var streamForRR *SsrcStream
 			var outputSenders int
 
-			rs.streamsMapMutex.Lock()
+			rs.streamsMapMutex.RLock()
 			streamsOut := rs.streamsOut
-			rs.streamsMapMutex.Unlock()
+			rs.streamsMapMutex.RUnlock()
 
 			for idx, str := range streamsOut {
-				str.Lock()
+				str.RLock()
 				switch str.streamStatus {
 				case active:
 					outActive++
@@ -182,14 +194,22 @@ func (rs *Session) rtcpService(ti, td int64) {
 					// intervals its sender status is set to false and the number of active senders in this session
 					// is decremented if not already zero. See chapter 6.3.8
 					//
-					str.streamMutex.Lock()
+					str.streamMutex.RLock()
 					rtpDiff := now - str.statistics.lastPacketTime
-					str.streamMutex.Unlock()
+					str.streamMutex.RUnlock()
 					if str.sender {
 						outputSenders++
 						if rtpDiff > dataTimeout {
+							str.RUnlock()
+
+							str.Lock()
 							str.sender = false
+							str.Unlock()
+
+							str.RLock()
+
 							outputSenders--
+
 							rs.Lock()
 							if rs.activeSenders > 0 {
 								rs.activeSenders--
@@ -199,23 +219,30 @@ func (rs *Session) rtcpService(ti, td int64) {
 					}
 
 					if str.sender {
-						rs.Lock()
+						str.RUnlock()
+
 						if rc == nil {
 							rc = rs.buildRtcpPkt(str, inActiveSinceLastRR)
 						} else {
 							rs.addSenderReport(str, rc)
 						}
-						rs.Unlock()
+
+						str.RLock()
 					}
 				case isClosing:
-					str.streamStatus = isClosed
+					str.RUnlock()
 
+					str.Lock()
+					str.streamStatus = isClosed
+					str.Unlock()
+
+					str.RLock()
 				case isClosed:
 					rs.streamsMapMutex.Lock()
 					delete(rs.streamsOut, idx)
 					rs.streamsMapMutex.Unlock()
 				}
-				str.Unlock()
+				str.RUnlock()
 			}
 			// If no active output stream is left then weSent becomes false
 			rs.Lock()
@@ -227,25 +254,29 @@ func (rs *Session) rtcpService(ti, td int64) {
 			// empty as well). If also no active output stream - don't create and send RTCP report. In this
 			// case the RTP stack in completey inactive.
 			if rc == nil && streamForRR != nil {
-				rs.Lock()
-				streamForRR.Lock()
 				rc = rs.buildRtcpPkt(streamForRR, inActiveSinceLastRR)
-				streamForRR.Unlock()
-				rs.Unlock()
 			}
 			if rc != nil {
 				rs.WriteCtrl(rc)
+
 				rs.Lock()
 				rs.tprev = now
 				size := float64(rc.InUse() + 20 + 8) // TODO: get real values for IP and transport from transport module
 				rs.avrgPacketLength = (1.0/16.0)*size + (15.0/16.0)*rs.avrgPacketLength
 
-				ti, td := rtcpInterval(outActive+inActive, int(rs.activeSenders), rs.RtcpSessionBandwidth,
-					rs.avrgPacketLength, rs.weSent, false)
+				ti, td := rtcpInterval(
+					outActive+inActive,
+					int(rs.activeSenders),
+					rs.RtcpSessionBandwidth,
+					rs.avrgPacketLength,
+					rs.weSent,
+					false,
+				)
 				rs.tnext = ti + now
 				dataTimeout = 2 * ti
 				ssrcTimeout = 5 * td
 				rs.Unlock()
+
 				rc.FreePacket()
 			}
 			outActive = 0
@@ -268,6 +299,7 @@ func (rs *Session) rtcpService(ti, td int64) {
 			}
 		}
 	}
+
 	rs.Lock()
 	rs.rtcpServiceActive = false
 	rs.Unlock()
@@ -284,17 +316,23 @@ func (rs *Session) rtcpService(ti, td int64) {
 func (rs *Session) buildRtcpPkt(strOut *SsrcStream, inStreamCnt int) (rc *CtrlPacket) {
 
 	var pktLen, offset int
+	strOut.RLock()
 	if strOut.sender {
+		strOut.RUnlock()
+
 		rc, offset = strOut.newCtrlPacket(RtcpSR)
-		offset = rc.addHeaderSsrc(offset, strOut.ssrc)
+		offset = rc.addHeaderSsrc(offset, strOut.Ssrc())
 
 		var info senderInfo
 		info, offset = rc.newSenderInfo()
 		strOut.fillSenderInfo(info) // create a sender info block after fixed header and SSRC.
 	} else {
+		strOut.RUnlock()
+
 		rc, offset = strOut.newCtrlPacket(RtcpRR)
-		offset = rc.addHeaderSsrc(offset, strOut.ssrc)
+		offset = rc.addHeaderSsrc(offset, strOut.Ssrc())
 	}
+
 	pktLen = offset/4 - 1
 	// TODO Handle round-robin if we have more then 31 really active input streams (chap 6.4)
 	if inStreamCnt >= 31 {
@@ -302,17 +340,27 @@ func (rs *Session) buildRtcpPkt(strOut *SsrcStream, inStreamCnt int) (rc *CtrlPa
 	}
 	var rrCnt int
 	if inStreamCnt > 0 {
+		rs.streamsMapMutex.RLock()
 		for _, strIn := range rs.streamsIn {
+			strIn.RLock()
 			if strIn.dataAfterLastReport {
+				strIn.RUnlock()
+
+				strIn.Lock()
 				strIn.dataAfterLastReport = false
+				strIn.Unlock()
 				strIn.makeRecvReport(rc)
+
 				pktLen += reportBlockLen / 4 // increment SR/RR to include length of this recv report block
 				rrCnt++
 				if inStreamCnt--; inStreamCnt <= 0 {
 					break
 				}
+			} else {
+				strIn.RUnlock()
 			}
 		}
+		rs.streamsMapMutex.RUnlock()
 	}
 	rc.SetLength(0, uint16(pktLen)) // length of first RTCP packet in compound: fixed header, 0 or 1 SR, n*RR
 	rc.SetCount(0, rrCnt)
@@ -340,13 +388,18 @@ func (rs *Session) buildRtcpByePkt(strOut *SsrcStream, reason string) (rc *CtrlP
 //
 func (rs *Session) addSdes(strOut *SsrcStream, rc *CtrlPacket) {
 	offsetSdes := rc.InUse()
+	strOut.RLock()
 	if strOut.sdesChunkLen > 0 {
+		strOut.RUnlock()
+
 		strOut.addCtrlHeader(rc, offsetSdes, RtcpSdes) // Add a RTCP SDES packet header after the SR/RR packet
 		// makeSdesChunk returns position where to append next chunk - for CSRCs that contribute to this, chap 6.5, RFC 3550
 		// CSRCs currently not supported, need additional data structures in output stream.
 		nextChunk := strOut.makeSdesChunk(rc)
 		rc.SetCount(offsetSdes, 1)                                   // currently one SDES chunk per SDES packet
 		rc.SetLength(offsetSdes, uint16((nextChunk-offsetSdes)/4-1)) // length of SDES packet in compound: fixed header plus SDES chunk len
+	} else {
+		strOut.RUnlock()
 	}
 }
 
@@ -358,14 +411,19 @@ func (rs *Session) addSdes(strOut *SsrcStream, rc *CtrlPacket) {
 //
 func (rs *Session) addSenderReport(strOut *SsrcStream, rc *CtrlPacket) {
 
+	strOut.RLock()
 	if !strOut.sender {
+		strOut.RUnlock()
 		return
 	}
 
 	headerOffset := rc.InUse()
 	if headerOffset+strOut.sdesChunkLen+8 > len(rc.Buffer()) {
+		strOut.RUnlock()
 		return
 	}
+	strOut.RUnlock()
+
 	offset := strOut.addCtrlHeader(rc, headerOffset, RtcpSR)
 	rc.addHeaderSsrc(offset, strOut.Ssrc())
 
@@ -384,48 +442,47 @@ func (rs *Session) addSenderReport(strOut *SsrcStream, rc *CtrlPacket) {
 //
 func (rs *Session) rtcpSenderCheck(rp *CtrlPacket, offset int) (*SsrcStream, uint32, bool) {
 	ssrc := rp.Ssrc(offset) // get SSRC from control packet
-
-	rs.streamsMapMutex.Lock()
 	str, strIdx, existing := rs.lookupSsrcMap(ssrc)
-	rs.streamsMapMutex.Unlock()
 
 	// if not found in the input stream then create a new SSRC input stream
 	if !existing {
-		rs.streamsMapMutex.Lock()
+		rs.streamsMapMutex.RLock()
 		if len(rs.streamsIn) > rs.MaxNumberInStreams {
-			rs.streamsMapMutex.Unlock()
+			rs.streamsMapMutex.RUnlock()
 			return nil, MaxNumInStreamReachedCtrl, false
+		} else {
+			rs.streamsMapMutex.RUnlock()
 		}
+
 		str = newSsrcStreamIn(&rp.fromAddr, ssrc)
 		str.streamStatus = active
+
+		rs.streamsMapMutex.Lock()
 		rs.streamsIn[rs.streamInIndex] = str
 		rs.streamInIndex++
 		rs.streamsMapMutex.Unlock()
 	} else {
-		str.Lock()
+		str.RLock()
 		// Check if an existing stream is active
 		if str.streamStatus != active {
-			str.Unlock()
+			str.RUnlock()
 
 			return nil, WrongStreamStatusCtrl, false
+		} else {
+			str.RUnlock()
 		}
 		// Test if RTP packets had been received but this is the first control packet from this source.
+		str.Lock()
 		if str.CtrlPort == 0 {
 			str.CtrlPort = rp.fromAddr.CtrlPort
 		}
-
 		str.Unlock()
 	}
 
 	// Check if sender's SSRC collides or loops
-	rs.Lock()
 	if !str.checkSsrcIncomingCtrl(existing, rs, &rp.fromAddr) {
-		rs.Unlock()
-
 		return nil, StreamCollisionLoopCtrl, false
 	}
-	rs.Unlock()
-
 	// record reception time
 	str.streamMutex.Lock()
 	str.statistics.lastRtcpPacketTime = time.Now().UnixNano()
@@ -441,9 +498,13 @@ func (rs *Session) sendDataCtrlEvent(code int, ssrc, index uint32) {
 	var ctrlEvArr [1]*CtrlEvent
 	ctrlEvArr[0] = newCrtlEvent(code, ssrc, index)
 
+	rs.RLock()
+	ch := rs.ctrlEventChan
+	rs.RUnlock()
+
 	if ctrlEvArr[0] != nil {
 		select {
-		case rs.ctrlEventChan <- ctrlEvArr[:]: // send control event
+		case ch <- ctrlEvArr[:]: // send control event
 		default:
 		}
 	}
@@ -464,22 +525,38 @@ func (rs *Session) lookupSsrcMap(ssrc uint32) (str *SsrcStream, idx uint32, exis
 // lookupSsrcMapIn returns a SsrcStreamIn for a given SSRC, nil and false if none found.
 //
 func (rs *Session) lookupSsrcMapIn(ssrc uint32) (*SsrcStream, uint32, bool) {
+	rs.streamsMapMutex.RLock()
 	for idx, str := range rs.streamsIn {
+		str.RLock()
 		if ssrc == str.ssrc {
+			str.RUnlock()
+			rs.streamsMapMutex.RUnlock()
+
 			return str, idx, true
 		}
+		str.RUnlock()
 	}
+	rs.streamsMapMutex.RUnlock()
+
 	return nil, 0, false
 }
 
 // lookupSsrcMapOut returns a SsrcStreamOut for a given SSRC, nil and false if none found.
 //
 func (rs *Session) lookupSsrcMapOut(ssrc uint32) (*SsrcStream, uint32, bool) {
+	rs.streamsMapMutex.RLock()
 	for idx, str := range rs.streamsOut {
+		str.RLock()
 		if ssrc == str.ssrc {
+			str.RUnlock()
+			rs.streamsMapMutex.RUnlock()
+
 			return str, idx, true
 		}
+		str.RUnlock()
 	}
+	rs.streamsMapMutex.RUnlock()
+
 	return nil, 0, false
 }
 
@@ -487,13 +564,20 @@ func (rs *Session) lookupSsrcMapOut(ssrc uint32) (*SsrcStream, uint32, bool) {
 // Use this functions to detect collisions.
 //
 func (rs *Session) isOutputSsrc(ssrc uint32) (found bool) {
+	rs.streamsMapMutex.RLock()
 	var str *SsrcStream
 	for _, str = range rs.streamsOut {
+		str.RLock()
 		if ssrc == str.ssrc {
+			str.RUnlock()
 			found = true
 			break
+		} else {
+			str.RUnlock()
 		}
 	}
+	rs.streamsMapMutex.RUnlock()
+
 	return
 }
 
@@ -508,20 +592,31 @@ func (rs *Session) checkConflictData(addr *Address) (found bool) {
 	var entry *conflictAddr
 	tm := time.Now().UnixNano()
 
+	rs.RLock()
 	for _, entry = range rs.conflicts {
 		if addr.IpAddr.Equal(entry.IpAddr) && addr.DataPort == entry.DataPort {
+			rs.RUnlock()
+
 			found = true
 			entry.seenAt = tm
+
 			return
 		}
 	}
+	rs.RUnlock()
+
 	entry = new(conflictAddr)
 	entry.IpAddr = addr.IpAddr
 	entry.DataPort = addr.DataPort
 	entry.seenAt = tm
+
+	rs.Lock()
 	rs.conflicts[rs.conflictIndex] = entry
 	rs.conflictIndex++
+	rs.Unlock()
+
 	found = false
+
 	return
 }
 
@@ -536,20 +631,29 @@ func (rs *Session) checkConflictCtrl(addr *Address) (found bool) {
 	var entry *conflictAddr
 	tm := time.Now().UnixNano()
 
+	rs.RLock()
 	for _, entry = range rs.conflicts {
 		if addr.IpAddr.Equal(entry.IpAddr) && addr.CtrlPort == entry.CtrlPort {
+			rs.RUnlock()
 			found = true
 			entry.seenAt = tm
 			return
 		}
 	}
+	rs.RUnlock()
+
 	entry = new(conflictAddr)
 	entry.IpAddr = addr.IpAddr
 	entry.CtrlPort = addr.CtrlPort
 	entry.seenAt = tm
+
+	rs.Lock()
 	rs.conflicts[rs.conflictIndex] = entry
 	rs.conflictIndex++
+	rs.Unlock()
+
 	found = false
+
 	return
 }
 
@@ -577,37 +681,57 @@ func (rs *Session) processSdesChunk(chunk sdesChunk, rp *CtrlPacket) (int, uint3
 func (rs *Session) replaceStream(oldOut *SsrcStream) (newOut *SsrcStream) {
 	var str *SsrcStream
 	var idx uint32
+	rs.streamsMapMutex.RLock()
 	for idx, str = range rs.streamsOut {
-		if oldOut.ssrc == str.ssrc {
+		if oldOut.Ssrc() == str.Ssrc() {
 			break
 		}
 	}
+	rs.streamsMapMutex.RUnlock()
 	// get new stream and copy over attributes from old stream
+	oldOut.RLock()
 	newOut = newSsrcStreamOut(&Address{oldOut.IpAddr, oldOut.DataPort, oldOut.CtrlPort, oldOut.Zone}, 0, 0)
-
 	for itemType, itemTxt := range oldOut.SdesItems {
 		newOut.SetSdesItem(itemType, itemTxt)
 	}
 	newOut.SetPayloadType(oldOut.payloadType)
+	newOut.RLock()
 	newOut.sender = oldOut.sender
+	newOut.RUnlock()
+	oldOut.RUnlock()
 
 	// Don't reuse an existing SSRC
-	for _, _, exists := rs.lookupSsrcMap(newOut.ssrc); exists; _, _, exists = rs.lookupSsrcMap(newOut.ssrc) {
+	for _, _, exists := rs.lookupSsrcMap(newOut.Ssrc()); exists; _, _, exists = rs.lookupSsrcMap(newOut.Ssrc()) {
 		newOut.newSsrc()
 	}
+	newOut.Lock()
 	newOut.streamType = OutputStream
+	newOut.Unlock()
+
+	rs.streamsMapMutex.Lock()
 	rs.streamsOut[idx] = newOut // replace the oldOut with a new initialized out, new SSRC, sequence but old address
+	rs.streamsMapMutex.Unlock()
 
 	// sanity check - this is a panic, something stange happened
+	rs.streamsMapMutex.RLock()
 	for idx, str = range rs.streamsIn {
-		if oldOut.ssrc == str.ssrc {
+		if oldOut.Ssrc() == str.Ssrc() {
+			rs.streamsMapMutex.RUnlock()
 			panic("Panic: found input stream during collision handling - expected none")
 			return
 		}
 	}
+	rs.streamsMapMutex.RUnlock()
+
+	oldOut.Lock()
 	oldOut.streamType = InputStream
+	oldOut.Unlock()
+
+	rs.streamsMapMutex.Lock()
 	rs.streamsIn[rs.streamInIndex] = oldOut
 	rs.streamInIndex++
+	rs.streamsMapMutex.Unlock()
+
 	return
 }
 

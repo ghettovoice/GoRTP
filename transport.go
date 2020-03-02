@@ -19,30 +19,30 @@
 package rtp
 
 import (
-    "sync"
+	"sync"
 )
 
 type TransportRecv interface {
-    ListenOnTransports() error
-    OnRecvData(rp *DataPacket) bool
-    OnRecvCtrl(rp *CtrlPacket) bool
-    SetCallUpper(upper TransportRecv)
-    CloseRecv()
-    SetEndChannel(ch TransportEnd)
+	ListenOnTransports() error
+	OnRecvData(rp *DataPacket) bool
+	OnRecvCtrl(rp *CtrlPacket) bool
+	SetCallUpper(upper TransportRecv)
+	CloseRecv()
+	SetEndChannel(ch TransportEnd)
 }
 
 type TransportWrite interface {
-    WriteDataTo(rp *DataPacket, addr *Address) (n int, err error)
-    WriteCtrlTo(rp *CtrlPacket, addr *Address) (n int, err error)
-    SetToLower(lower TransportWrite)
-    CloseWrite()
+	WriteDataTo(rp *DataPacket, addr *Address) (n int, err error)
+	WriteCtrlTo(rp *CtrlPacket, addr *Address) (n int, err error)
+	SetToLower(lower TransportWrite)
+	CloseWrite()
 }
 
 type TransportCommon struct {
-    sync.Mutex
-    transportEnd TransportEnd
-    dataRecvStop,
-    ctrlRecvStop,
-    dataWriteStop,
-    ctrlWriteStop bool
+	sync.RWMutex
+	transportEnd TransportEnd
+	dataRecvStop,
+	ctrlRecvStop,
+	dataWriteStop,
+	ctrlWriteStop bool
 }
