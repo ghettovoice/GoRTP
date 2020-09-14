@@ -209,10 +209,13 @@ func (rs *Session) RemoveRemote(index uint32) {
 //
 func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16) (index uint32, err Error) {
 	rs.RLock()
+	rs.streamsMapMutex.RLock()
 	if len(rs.streamsOut) > rs.MaxNumberOutStreams {
+		rs.streamsMapMutex.RUnlock()
 		rs.RUnlock()
 		return 0, Error("Maximum number of output streams reached.")
 	}
+	rs.streamsMapMutex.RUnlock()
 	rs.RUnlock()
 
 	str := newSsrcStreamOut(own, ssrc, sequenceNo)
@@ -225,7 +228,9 @@ func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16
 	}
 
 	rs.Lock()
+	rs.streamsMapMutex.Lock()
 	rs.streamsOut[rs.streamOutIndex] = str
+	rs.streamsMapMutex.Unlock()
 	index = rs.streamOutIndex
 	rs.streamOutIndex++
 	rs.Unlock()
@@ -246,8 +251,8 @@ func (rs *Session) StartSession() (err error) {
 	}
 	// compute first transmission interval
 	rs.Lock()
+	rs.streamsMapMutex.RLock()
 	if rs.RtcpSessionBandwidth == 0.0 { // If not set by application try to guess a value
-		rs.streamsMapMutex.RLock()
 		for _, str := range rs.streamsOut {
 			format := PayloadFormatMap[int(str.PayloadType())]
 			if format == nil {
@@ -256,9 +261,9 @@ func (rs *Session) StartSession() (err error) {
 			// Assumption: fixed codec used, 8 byte per sample, one channel
 			rs.RtcpSessionBandwidth += float64(format.ClockRate) * 8.0 / 20.
 		}
-		rs.streamsMapMutex.RUnlock()
 	}
 	rs.avrgPacketLength = float64(len(rs.streamsOut)*senderInfoLen + reportBlockLen + 20) // 28 for SDES
+	rs.streamsMapMutex.RUnlock()
 
 	// initial call: members, senders, RTCP bandwidth,   packet length,     weSent, initial
 	ti, td := rtcpInterval(1, 0, rs.RtcpSessionBandwidth, rs.avrgPacketLength, false, true)
