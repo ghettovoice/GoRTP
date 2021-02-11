@@ -21,6 +21,7 @@ package rtp
 import (
 	"fmt"
 	"net"
+	"sync"
 )
 
 // TransportUDP implements the interfaces RtpTransportRecv and RtpTransportWrite for RTP transports.
@@ -30,6 +31,7 @@ type TransportUDP struct {
 	toLower                     TransportWrite
 	dataConn, ctrlConn          *net.UDPConn
 	localAddrRtp, localAddrRtcp *net.UDPAddr
+	wg                          sync.WaitGroup
 }
 
 // NewTransportUDP creates a new RTP transport for UPD.
@@ -44,6 +46,8 @@ func NewTransportUDP(addr *net.IPAddr, port int, zone string) (*TransportUDP, er
 	tp.callUpper = tp
 	tp.localAddrRtp = &net.UDPAddr{addr.IP, port, zone}
 	tp.localAddrRtcp = &net.UDPAddr{addr.IP, port + 1, zone}
+	tp.dataRecvStop = true
+	tp.ctrlRecvStop = true
 	return tp, nil
 }
 
@@ -55,6 +59,8 @@ func NewTransportUDPConn(dataConn *net.UDPConn, ctrlConn *net.UDPConn) (*Transpo
 	tp.localAddrRtp = dataConn.LocalAddr().(*net.UDPAddr)
 	tp.ctrlConn = ctrlConn
 	tp.localAddrRtcp = ctrlConn.LocalAddr().(*net.UDPAddr)
+	tp.dataRecvStop = true
+	tp.ctrlRecvStop = true
 	return tp, nil
 }
 
@@ -67,7 +73,6 @@ func (tp *TransportUDP) ListenOnTransports() (err error) {
 		if err != nil {
 			return
 		}
-		go tp.readDataPacket()
 	}
 	if tp.ctrlConn == nil {
 		tp.ctrlConn, err = net.ListenUDP(tp.localAddrRtcp.Network(), tp.localAddrRtcp)
@@ -76,8 +81,17 @@ func (tp *TransportUDP) ListenOnTransports() (err error) {
 			tp.dataConn = nil
 			return
 		}
+	}
+	tp.Lock()
+	if tp.dataRecvStop {
+		tp.wg.Add(1)
+		go tp.readDataPacket()
+	}
+	if tp.ctrlRecvStop {
+		tp.wg.Add(1)
 		go tp.readCtrlPacket()
 	}
+	tp.Unlock()
 	return nil
 }
 
@@ -118,11 +132,14 @@ func (tp *TransportUDP) CloseRecv() {
 	tp.ctrlRecvStop = true
 	tp.Unlock()
 
-	err := tp.dataConn.Close()
-	if err != nil {
-		fmt.Printf("Close failed: %s\n", err.Error())
+	if tp.dataConn != nil {
+		tp.dataConn.Close()
 	}
-	tp.ctrlConn.Close()
+	if tp.ctrlConn != nil {
+		tp.ctrlConn.Close()
+	}
+
+	tp.wg.Wait()
 }
 
 // SetEndChannel receives and set the channel to signal back after network socket was closed and receive loop terminated.
@@ -164,6 +181,8 @@ func (tp *TransportUDP) CloseWrite() {
 // if callback is not nil
 
 func (tp *TransportUDP) readDataPacket() {
+	defer tp.wg.Done()
+
 	var buf [defaultBufferSize]byte
 
 	tp.Lock()
@@ -202,6 +221,8 @@ func (tp *TransportUDP) readDataPacket() {
 }
 
 func (tp *TransportUDP) readCtrlPacket() {
+	defer tp.wg.Done()
+
 	var buf [defaultBufferSize]byte
 
 	tp.Lock()
