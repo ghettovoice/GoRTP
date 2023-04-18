@@ -821,10 +821,11 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 func (rs *Session) CloseRecv() {
 	rs.RLock()
 	if rs.transportRecv != nil {
-		rs.transportRecv.CloseRecv()
+		recv := rs.transportRecv
 		ch := rs.transportEnd
 		rs.RUnlock()
 
+		recv.CloseRecv()
 		for allClosed := 0; allClosed != (DataTransportRecvStopped | CtrlTransportRecvStopped); {
 			allClosed |= <-ch
 		}
