@@ -67,6 +67,7 @@ func (tp *TransportUDP) ListenOnTransports() (err error) {
 		if err != nil {
 			return
 		}
+		go tp.readDataPacket()
 	}
 	if tp.ctrlConn == nil {
 		tp.ctrlConn, err = net.ListenUDP(tp.localAddrRtcp.Network(), tp.localAddrRtcp)
@@ -75,9 +76,8 @@ func (tp *TransportUDP) ListenOnTransports() (err error) {
 			tp.dataConn = nil
 			return
 		}
+		go tp.readCtrlPacket()
 	}
-	go tp.readDataPacket()
-	go tp.readCtrlPacket()
 	return nil
 }
 
