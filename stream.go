@@ -161,8 +161,7 @@ func (str *SsrcStream) SequenceNo() uint16 {
 // format or set the new payload format at the correct index before it sets the
 // payload type of the stream.
 //
-//  pt - the payload type number.
-//
+//	pt - the payload type number.
 func (str *SsrcStream) SetPayloadType(pt byte) (ok bool) {
 	if _, ok = PayloadFormatMap[int(pt)]; !ok {
 		return
@@ -184,7 +183,6 @@ func (str *SsrcStream) PayloadType() byte {
 }
 
 // StreamType returns stream's type, either input stream or otput stream.
-//
 func (str *SsrcStream) StreamType() int {
 	str.RLock()
 	defer str.RUnlock()
@@ -235,8 +233,7 @@ func newSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16) (so *SsrcStr
 // number of samples correspond to the payload length. For variable codecs the number of samples
 // has no direct relationship with the payload length.
 //
-//   stamp - the RTP timestamp for this packet.
-//
+//	stamp - the RTP timestamp for this packet.
 func (str *SsrcStream) newDataPacket(stamp uint32) (rp *DataPacket) {
 	rp = newDataPacket()
 	rp.SetSsrc(str.ssrc)
@@ -256,10 +253,8 @@ func (str *SsrcStream) newDataPacket(stamp uint32) (rp *DataPacket) {
 // This method returns an initialized RTCP packet that contains the correct SSRC, and the RTCP packet
 // type. In addition the method returns the offset to the next position inside the buffer.
 //
-//
-//   streamindex - the index of the output stream as returned by NewSsrcStreamOut
-//   stamp       - the RTP timestamp for this packet.
-//
+//	streamindex - the index of the output stream as returned by NewSsrcStreamOut
+//	stamp       - the RTP timestamp for this packet.
 func (str *SsrcStream) newCtrlPacket(pktType int) (rp *CtrlPacket, offset int) {
 	rp, offset = newCtrlPacket()
 	rp.SetType(0, pktType)
@@ -514,73 +509,52 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 
 	seq := rp.Sequence()
 
-	si.streamMutex.RLock()
-	probation := si.statistics.probation
-	si.streamMutex.RUnlock()
+	si.Lock()
+	defer si.Unlock()
 
-	if probation != 0 {
-		si.streamMutex.RLock()
-		maxSeqNum := si.statistics.maxSeqNum
-		si.streamMutex.RUnlock()
+	si.streamMutex.Lock()
+	defer si.streamMutex.Unlock()
+
+	if si.statistics.probation != 0 {
 		// source is not yet valid.
-		if seq == maxSeqNum+1 {
+		if seq == si.statistics.maxSeqNum+1 {
 			// packet in sequence.
-			si.streamMutex.Lock()
 			si.statistics.probation--
 			if si.statistics.probation == 0 {
 				si.statistics.seqNumAccum = 0
 			} else {
 				result = false
 			}
-			si.streamMutex.Unlock()
 		} else {
 			// packet not in sequence.
-			si.streamMutex.Lock()
 			si.statistics.probation = minSequential - 1
-			si.streamMutex.Unlock()
 			result = false
 		}
 
-		si.streamMutex.Lock()
 		si.statistics.maxSeqNum = seq
-		si.streamMutex.Unlock()
 	} else {
 		// source was already valid.
-		si.streamMutex.RLock()
 		step := seq - si.statistics.maxSeqNum
-		si.streamMutex.RUnlock()
 		if step < maxDropout {
 			// Ordered, with not too high step.
-			si.streamMutex.RLock()
 			maxSeqNum := si.statistics.maxSeqNum
-			si.streamMutex.RUnlock()
 			if seq < maxSeqNum {
 				// sequene number wrapped.
-				si.streamMutex.Lock()
 				si.statistics.seqNumAccum += seqNumMod
-				si.streamMutex.Unlock()
 			}
 
-			si.streamMutex.Lock()
 			si.statistics.maxSeqNum = seq
-			si.streamMutex.Unlock()
 		} else if step <= (seqNumMod - maxMisorder) {
 			// too high step of the sequence number.
 			// TODO: check usage of baseSeqNum
-			si.streamMutex.RLock()
-			badSeqNum := si.statistics.badSeqNum
-			si.streamMutex.RUnlock()
-			if uint32(seq) == badSeqNum {
+			if uint32(seq) == si.statistics.badSeqNum {
 				// Here we saw two sequential packets - assume other side restarted, so just re-sync
 				// and treat this packet as first packet
-				si.streamMutex.Lock()
 				si.statistics.maxSeqNum = seq
 				si.statistics.baseSeqNum = seq
 				si.statistics.seqNumAccum = 0
 				si.statistics.badSeqNum = seqNumMod + 1
-				si.streamMutex.Unlock()
 			} else {
-				si.streamMutex.Lock()
 				si.statistics.badSeqNum = uint32((seq + 1) & (seqNumMod - 1))
 				// This additional check avoids that the very first packet from a source be discarded.
 				if si.statistics.packetCount > 0 {
@@ -588,7 +562,6 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 				} else {
 					si.statistics.maxSeqNum = seq
 				}
-				si.streamMutex.Unlock()
 			}
 		} else {
 			// duplicate or reordered packet
@@ -596,8 +569,6 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 	}
 
 	if result {
-		si.Lock()
-		si.streamMutex.Lock()
 		si.sequenceNumber = si.statistics.maxSeqNum
 		// the packet is considered valid.
 		si.statistics.packetCount++
@@ -607,7 +578,6 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 			si.statistics.baseSeqNum = seq
 		}
 		si.statistics.lastPacketTime = recvTime
-		si.streamMutex.Unlock()
 
 		if !si.sender && rs.rtcpCtrlChan != nil {
 			select {
@@ -617,12 +587,10 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 		}
 		si.sender = true // Stream is sender. If it was false new stream or no RTP packets for some time
 		si.dataAfterLastReport = true
-		si.Unlock()
 
 		// compute the interarrival jitter estimation.
 		pt := int(rp.PayloadType())
 		// compute lastPacketTime to ms and clockrate as kHz
-		si.streamMutex.Lock()
 		arrival := uint32(si.statistics.lastPacketTime / 1e6 * int64(PayloadFormatMap[pt].ClockRate/1e3))
 		transitTime := arrival - rp.Timestamp()
 		if si.statistics.lastPacketTransitTime != 0 {
@@ -633,8 +601,9 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 			si.statistics.jitter += uint32(delta) - ((si.statistics.jitter + 8) >> 4)
 		}
 		si.statistics.lastPacketTransitTime = transitTime
-		si.streamMutex.Unlock()
 	}
+
+	si.resolveRecvReport()
 
 	return
 }
@@ -706,13 +675,7 @@ func (si *SsrcStream) checkSsrcIncomingCtrl(existingStream bool, rs *Session, fr
 	return
 }
 
-// makeRecvReport fills a receiver report at the current inUse position and returns offset that points after the report.
-// See chapter A.3 in RFC 3550 regarding the packet lost algorithm, end of chapter 6.4.1 regarding LSR, DLSR stuff.
-//
-func (si *SsrcStream) makeRecvReport(rp *CtrlPacket) (newOffset int) {
-	report, newOffset := rp.newRecvReport()
-
-	si.streamMutex.RLock()
+func (si *SsrcStream) resolveRecvReport() {
 	extMaxSeq := si.statistics.seqNumAccum + uint32(si.statistics.maxSeqNum)
 	expected := extMaxSeq - uint32(si.statistics.baseSeqNum) + 1
 	lost := expected - si.statistics.packetCount
@@ -720,14 +683,9 @@ func (si *SsrcStream) makeRecvReport(rp *CtrlPacket) (newOffset int) {
 		lost = 0
 	}
 	expectedDelta := expected - si.statistics.expectedPrior
-	si.streamMutex.RUnlock()
-
-	si.streamMutex.Lock()
 	si.statistics.expectedPrior = expected
 	receivedDelta := si.statistics.packetCount - si.statistics.receivedPrior
 	si.statistics.receivedPrior = si.statistics.packetCount
-	si.streamMutex.Unlock()
-
 	lostDelta := expectedDelta - receivedDelta
 
 	var fracLost byte
@@ -736,7 +694,6 @@ func (si *SsrcStream) makeRecvReport(rp *CtrlPacket) (newOffset int) {
 	}
 
 	var lsr, dlsr uint32
-	si.streamMutex.RLock()
 	if si.statistics.lastRtcpSrTime != 0 {
 		sec, frac := toNtpStamp(si.statistics.lastRtcpSrTime)
 		ntp := (sec << 32) | frac
@@ -745,19 +702,35 @@ func (si *SsrcStream) makeRecvReport(rp *CtrlPacket) (newOffset int) {
 		ntp = (sec << 32) | frac
 		dlsr = ntp >> 16
 	}
-	si.streamMutex.RUnlock()
+
+	si.PacketsLost = lost
+	si.FracLost = fracLost
+	si.HighestSeqNo = extMaxSeq
+	si.Jitter = si.statistics.jitter >> 4
+	si.LastSr = lsr
+	si.Dlsr = dlsr
+}
+
+// makeRecvReport fills a receiver report at the current inUse position and returns offset that points after the report.
+// See chapter A.3 in RFC 3550 regarding the packet lost algorithm, end of chapter 6.4.1 regarding LSR, DLSR stuff.
+func (si *SsrcStream) makeRecvReport(rp *CtrlPacket) (newOffset int) {
+	report, newOffset := rp.newRecvReport()
 
 	si.RLock()
+	defer si.RUnlock()
+
 	si.streamMutex.RLock()
+	defer si.streamMutex.RUnlock()
+
+	si.resolveRecvReport()
+
 	report.setSsrc(si.ssrc)
-	report.setPacketsLost(lost)
-	report.setPacketsLostFrac(fracLost)
-	report.setHighestSeq(extMaxSeq)
-	report.setJitter(si.statistics.jitter >> 4)
-	report.setLsr(lsr)
-	report.setDlsr(dlsr)
-	si.streamMutex.RUnlock()
-	si.RUnlock()
+	report.setPacketsLost(si.PacketsLost)
+	report.setPacketsLostFrac(si.FracLost)
+	report.setHighestSeq(si.HighestSeqNo)
+	report.setJitter(si.Jitter)
+	report.setLsr(si.LastSr)
+	report.setDlsr(si.Dlsr)
 
 	return
 }
