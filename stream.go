@@ -327,20 +327,25 @@ func (so *SsrcStream) readRecvReport(report recvReport) {
 	so.Unlock()
 }
 
-// fillSenderInfo fills in the senderInfo.
-func (so *SsrcStream) fillSenderInfo(info senderInfo) {
-	so.RLock()
-	info.setOctetCount(so.SenderOctectCnt)
-	info.setPacketCount(so.SenderPacketCnt)
+func (so *SsrcStream) resolveSendReportTstamps() {
 	tm := time.Now().UnixNano()
-	sec, frac := toNtpStamp(tm)
-	info.setNtpTimeStamp(sec, frac)
-
+	so.NtpTime = tm
 	tm1 := uint32(tm-so.initialTime) / 1e6                               // time since session creation in ms
 	tm1 *= uint32(PayloadFormatMap[int(so.payloadType)].ClockRate / 1e3) // compute number of samples
 	tm1 += so.initialStamp
-	info.setRtpTimeStamp(tm1)
-	so.RUnlock()
+	so.RtpTimestamp = tm1
+}
+
+// fillSenderInfo fills in the senderInfo.
+func (so *SsrcStream) fillSenderInfo(info senderInfo) {
+	so.Lock()
+	so.resolveSendReportTstamps()
+	info.setOctetCount(so.SenderOctectCnt)
+	info.setPacketCount(so.SenderPacketCnt)
+	sec, frac := toNtpStamp(so.NtpTime)
+	info.setNtpTimeStamp(sec, frac)
+	info.setRtpTimeStamp(so.RtpTimestamp)
+	so.Unlock()
 }
 
 // makeSdesChunk creates an SDES chunk at the current inUse position and returns offset that points after the chunk.

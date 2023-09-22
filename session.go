@@ -876,6 +876,7 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 
 	strOut.SenderPacketCnt++
 	strOut.SenderOctectCnt += uint32(len(rp.Payload()))
+	strOut.resolveSendReportTstamps()
 
 	rs.RLock()
 	ch := rs.rtcpCtrlChan
