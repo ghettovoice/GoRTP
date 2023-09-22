@@ -44,8 +44,8 @@ type TransportUDP struct {
 func NewTransportUDP(addr *net.IPAddr, port int, zone string) (*TransportUDP, error) {
 	tp := new(TransportUDP)
 	tp.callUpper = tp
-	tp.localAddrRtp = &net.UDPAddr{addr.IP, port, zone}
-	tp.localAddrRtcp = &net.UDPAddr{addr.IP, port + 1, zone}
+	tp.localAddrRtp = &net.UDPAddr{IP: addr.IP, Port: port, Zone: zone}
+	tp.localAddrRtcp = &net.UDPAddr{IP: addr.IP, Port: port + 1, Zone: zone}
 	tp.dataRecvStop = true
 	tp.ctrlRecvStop = true
 	return tp, nil
@@ -158,12 +158,12 @@ func (tp *TransportUDP) SetToLower(lower TransportWrite) {
 
 // WriteDataTo implements the rtp.TransportWrite WriteDataTo method.
 func (tp *TransportUDP) WriteDataTo(rp *DataPacket, addr *Address) (n int, err error) {
-	return tp.dataConn.WriteToUDP(rp.buffer[0:rp.inUse], &net.UDPAddr{addr.IpAddr, addr.DataPort, addr.Zone})
+	return tp.dataConn.WriteToUDP(rp.buffer[0:rp.inUse], &net.UDPAddr{IP: addr.IpAddr, Port: addr.DataPort, Zone: addr.Zone})
 }
 
 // WriteCtrlTo implements the rtp.TransportWrite WriteCtrlTo method.
 func (tp *TransportUDP) WriteCtrlTo(rp *CtrlPacket, addr *Address) (n int, err error) {
-	return tp.ctrlConn.WriteToUDP(rp.buffer[0:rp.inUse], &net.UDPAddr{addr.IpAddr, addr.CtrlPort, addr.Zone})
+	return tp.ctrlConn.WriteToUDP(rp.buffer[0:rp.inUse], &net.UDPAddr{IP: addr.IpAddr, Port: addr.CtrlPort, Zone: addr.Zone})
 }
 
 // CloseWrite implements the rtp.TransportWrite CloseWrite method.

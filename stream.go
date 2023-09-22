@@ -696,11 +696,11 @@ func (si *SsrcStream) resolveRecvReport() {
 	var lsr, dlsr uint32
 	if si.statistics.lastRtcpSrTime != 0 {
 		sec, frac := toNtpStamp(si.statistics.lastRtcpSrTime)
-		ntp := (sec << 32) | frac
-		lsr = ntp >> 16
+		ntp := (uint64(sec) << 32) | uint64(frac)
+		lsr = uint32(ntp) >> 16
 		sec, frac = toNtpStamp(time.Now().UnixNano() - si.statistics.lastRtcpSrTime)
-		ntp = (sec << 32) | frac
-		dlsr = ntp >> 16
+		ntp = (uint64(sec) << 32) | uint64(frac)
+		dlsr = uint32(ntp) >> 16
 	}
 
 	si.PacketsLost = lost
