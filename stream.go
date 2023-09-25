@@ -100,7 +100,6 @@ type SsrcStream struct {
 
 	streamType     int
 	streamStatus   int
-	streamMutex    sync.RWMutex
 	Address                    // Own if it is an output stream, remote address in case of input stream
 	SenderInfoData             // Sender reports if this is an input stream, read only.
 	RecvReportData             // Receiver reports if this is an output stream, read anly.
@@ -521,9 +520,6 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 	si.Lock()
 	defer si.Unlock()
 
-	si.streamMutex.Lock()
-	defer si.streamMutex.Unlock()
-
 	if si.statistics.probation != 0 {
 		// source is not yet valid.
 		if seq == si.statistics.maxSeqNum+1 {
@@ -726,9 +722,6 @@ func (si *SsrcStream) makeRecvReport(rp *CtrlPacket) (newOffset int) {
 	si.RLock()
 	defer si.RUnlock()
 
-	si.streamMutex.RLock()
-	defer si.streamMutex.RUnlock()
-
 	si.resolveRecvReport()
 
 	report.setSsrc(si.ssrc)
@@ -754,39 +747,36 @@ func (si *SsrcStream) readSenderInfo(info senderInfo) {
 
 // goodBye marks this source as having sent a BYE control packet.
 func (si *SsrcStream) goodbye() bool {
-	si.streamMutex.RLock()
+	si.Lock()
+	defer si.Unlock()
+
 	if !si.statistics.flag {
-		si.streamMutex.RUnlock()
 		return false
 	}
-	si.streamMutex.RUnlock()
 
-	si.streamMutex.Lock()
 	si.statistics.flag = false
-	si.streamMutex.Unlock()
 
 	return true
 }
 
 // hello marks this source as having sent some packet.
 func (si *SsrcStream) hello() bool {
-	si.streamMutex.RLock()
+	si.Lock()
+	defer si.Unlock()
+
 	if si.statistics.flag {
-		si.streamMutex.RUnlock()
 		return false
 	}
-	si.streamMutex.RUnlock()
 
-	si.streamMutex.Lock()
 	si.statistics.flag = true
-	si.streamMutex.Unlock()
 
 	return true
 }
 
 // initStats initializes all RTCP statistic counters and other relevant data.
 func (si *SsrcStream) initStats() {
-	si.streamMutex.Lock()
+	si.Lock()
+
 	si.statistics.lastPacketTime = 0
 	si.statistics.lastRtcpPacketTime = 0
 	si.statistics.lastRtcpSrTime = 0
@@ -808,7 +798,8 @@ func (si *SsrcStream) initStats() {
 	si.statistics.expectedPrior = 0
 	si.statistics.receivedPrior = 0
 	si.statistics.seqNumAccum = 0
-	si.streamMutex.Unlock()
+
+	si.Unlock()
 }
 
 func (si *SsrcStream) parseSdesChunk(sc sdesChunk) {
@@ -838,3 +829,5 @@ func (si *SsrcStream) parseSdesChunk(sc sdesChunk) {
 		si.Unlock()
 	}
 }
+
+func (str *SsrcStream) GetStats() {}

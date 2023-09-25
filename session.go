@@ -516,10 +516,8 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 			rs.streamsMapMutex.Unlock()
 
 			str.Lock()
-			str.streamMutex.Lock()
 			str.streamStatus = active
 			str.statistics.initialDataTime = now // First packet arrival time.
-			str.streamMutex.Unlock()
 			str.Unlock()
 
 			rs.streamsMapMutex.RLock()
@@ -529,9 +527,9 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 			rs.sendDataCtrlEvent(NewStreamData, ssrc, idx)
 		} else {
 			// Check if an existing stream is active
-			str.RLock()
+			str.Lock()
 			if str.streamStatus != active {
-				str.RUnlock()
+				str.Unlock()
 
 				rs.streamsMapMutex.RLock()
 				idx := rs.streamInIndex - 1
@@ -542,11 +540,8 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 
 				return false
 
-			} else {
-				str.RUnlock()
 			}
 			// Test if RTCP packets had been received but this is the first data packet from this source.
-			str.Lock()
 			if str.DataPort == 0 {
 				str.DataPort = rp.fromAddr.DataPort
 			}
@@ -628,9 +623,9 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 					rs.streamsMapMutex.RUnlock()
 				}
 
-				str.streamMutex.Lock()
+				str.Lock()
 				str.statistics.lastRtcpSrTime = str.statistics.lastRtcpPacketTime
-				str.streamMutex.Unlock()
+				str.Unlock()
 
 				str.readSenderInfo(rp.toSenderInfo(rtcpHeaderLength + rtcpSsrcLength + offset))
 
@@ -863,26 +858,21 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 		strOut.Lock()
 		strOut.sender = true
 	}
-	strOut.Unlock()
 
-	strOut.streamMutex.Lock()
 	strOut.statistics.lastPacketTime = time.Now().UnixNano()
-	strOut.streamMutex.Unlock()
+	strOut.Unlock()
 
 	rs.Lock()
 	rs.weSent = true
-	rs.Unlock()
-
 	// Check here if SRTP is enabled for the SSRC of the packet - a stream attribute
-	rs.RLock()
 	for _, remote := range rs.remotes {
 		_, err := rs.transportWrite.WriteDataTo(rp, remote)
 		if err != nil {
-			rs.RUnlock()
+			rs.Unlock()
 			return 0, err
 		}
 	}
-	rs.RUnlock()
+	rs.Unlock()
 
 	return n, nil
 }
