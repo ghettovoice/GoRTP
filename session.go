@@ -29,7 +29,6 @@ import (
 )
 
 // Session contols and manages the resources and actions of a RTP session.
-//
 type Session struct {
 	sync.RWMutex
 
@@ -76,7 +75,6 @@ type Address struct {
 // packet (SDES, BYE, etc) or report and stores them in a slice of CtrlEvent pointers and sends
 // this slice to the application after all RTCP packets and reports are processed. The application may now loop
 // over the slice and select the events that it may process.
-//
 type CtrlEvent struct {
 	EventType int    // Either a Stream event or a Rtcp* packet type event, e.g. RtcpSR, RtcpRR, RtcpSdes, RtcpBye
 	Ssrc      uint32 // the input stream's SSRC
@@ -136,9 +134,9 @@ const (
 // NewSession creates a new RTP session.
 //
 // A RTP session requires two transports:
-//   tpw - a transport that implements the RtpTransportWrite interface
-//   tpr - a transport that implements the RtpTransportRecv interface
 //
+//	tpw - a transport that implements the RtpTransportWrite interface
+//	tpr - a transport that implements the RtpTransportRecv interface
 func NewSession(tpw TransportWrite, tpr TransportRecv) *Session {
 	rs := new(Session)
 
@@ -168,8 +166,7 @@ func NewSession(tpw TransportWrite, tpr TransportRecv) *Session {
 // The port number must be even. The socket with the even port number sends and receives
 // RTP packets. The socket with next odd port number sends and receives RTCP packets.
 //
-//   remote - the RTP address of the remote peer. The RTP data port number must be even.
-//
+//	remote - the RTP address of the remote peer. The RTP data port number must be even.
 func (rs *Session) AddRemote(remote *Address) (index uint32, err error) {
 	rs.Lock()
 	if (remote.DataPort & 0x1) == 0x1 {
@@ -184,7 +181,6 @@ func (rs *Session) AddRemote(remote *Address) (index uint32, err error) {
 }
 
 // RemoveRemote removes the address at the specified index.
-//
 func (rs *Session) RemoveRemote(index uint32) {
 	rs.Lock()
 	delete(rs.remotes, index)
@@ -200,13 +196,12 @@ func (rs *Session) RemoveRemote(index uint32) {
 // The index does not change for the lifetime of the stream and will not be reused during the lifetime of this session.
 // (up to 2^64 streams per session :-) )
 //
-//   own        - Output stream's own address. Required to detect collisions and loops.
-//   ssrc       - If not zero then this is the SSRC of the output stream. If zero then
-//                the method generates a random SSRC according to RFC 3550.
-//   sequenceNo - If not zero then this is the starting sequence number of the output stream.
-//                If zero then the method generates a random starting sequence number according
-//                to RFC 3550
-//
+//	own        - Output stream's own address. Required to detect collisions and loops.
+//	ssrc       - If not zero then this is the SSRC of the output stream. If zero then
+//	             the method generates a random SSRC according to RFC 3550.
+//	sequenceNo - If not zero then this is the starting sequence number of the output stream.
+//	             If zero then the method generates a random starting sequence number according
+//	             to RFC 3550
 func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16) (index uint32, err Error) {
 	rs.RLock()
 	rs.streamsMapMutex.RLock()
@@ -243,7 +238,6 @@ func (rs *Session) NewSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16
 // An application must have created an output stream that the session can use to send RTCP data. This
 // is true even if the application is in "listening" mode only. An application must send receiver
 // reports to it's remote peers.
-//
 func (rs *Session) StartSession() (err error) {
 	err = rs.ListenOnTransports() // activate the transports
 	if err != nil {
@@ -279,7 +273,6 @@ func (rs *Session) StartSession() (err error) {
 //
 // The methods stops the RTCP service, sends a BYE to all remaining active output streams, and
 // closes the receiver transports,
-//
 func (rs *Session) CloseSession() {
 	rs.RLock()
 	if rs.rtcpServiceActive {
@@ -317,8 +310,7 @@ func (rs *Session) CloseSession() {
 // number of samples correspond to the payload length. For variable codecs the number of samples
 // has no direct relationship with the payload length.
 //
-//   stamp - the RTP timestamp for this packet.
-//
+//	stamp - the RTP timestamp for this packet.
 func (rs *Session) NewDataPacket(stamp uint32) *DataPacket {
 	rs.streamsMapMutex.RLock()
 	str := rs.streamsOut[0]
@@ -333,9 +325,8 @@ func (rs *Session) NewDataPacket(stamp uint32) *DataPacket {
 // number, and payload type if payload type was set in the stream. See also documentation of
 // NewDataPacket.
 //
-//   streamindex - the index of the output stream as returned by NewSsrcStreamOut
-//   stamp       - the RTP timestamp for this packet.
-//
+//	streamindex - the index of the output stream as returned by NewSsrcStreamOut
+//	stamp       - the RTP timestamp for this packet.
 func (rs *Session) NewDataPacketForStream(streamIndex uint32, stamp uint32) *DataPacket {
 	rs.streamsMapMutex.RLock()
 	str := rs.streamsOut[streamIndex]
@@ -348,7 +339,6 @@ func (rs *Session) NewDataPacketForStream(streamIndex uint32, stamp uint32) *Dat
 //
 // An application shall listen on this channel to get received RTP data packets.
 // If the channel is full then the RTP receiver discards the data packets.
-//
 func (rs *Session) CreateDataReceiveChan() DataReceiveChan {
 	ch := make(DataReceiveChan, dataReceiveChanLen)
 
@@ -362,7 +352,6 @@ func (rs *Session) CreateDataReceiveChan() DataReceiveChan {
 // RemoveDataReceivedChan deletes the data received channel.
 //
 // The receiver discards all received packets.
-//
 func (rs *Session) RemoveDataReceiveChan() {
 	rs.Lock()
 	rs.dataReceiveChan = nil
@@ -373,7 +362,6 @@ func (rs *Session) RemoveDataReceiveChan() {
 //
 // An application shall listen on this channel to get control events.
 // If the channel is full then the RTCP receiver does not send control events.
-//
 func (rs *Session) CreateCtrlEventChan() CtrlEventChan {
 	ch := make(CtrlEventChan, ctrlEventChanLen)
 
@@ -385,7 +373,6 @@ func (rs *Session) CreateCtrlEventChan() CtrlEventChan {
 }
 
 // RemoveCtrlEventChan deletes the control event channel.
-//
 func (rs *Session) RemoveCtrlEventChan() {
 	rs.Lock()
 	rs.ctrlEventChan = nil
@@ -393,7 +380,6 @@ func (rs *Session) RemoveCtrlEventChan() {
 }
 
 // SsrcStreamOut gets the standard output stream.
-//
 func (rs *Session) SsrcStreamOut() *SsrcStream {
 	rs.streamsMapMutex.RLock()
 	defer rs.streamsMapMutex.RUnlock()
@@ -403,8 +389,7 @@ func (rs *Session) SsrcStreamOut() *SsrcStream {
 
 // SsrcStreamOut gets the output stream at streamIndex.
 //
-//   streamindex - the index of the output stream as returned by NewSsrcStreamOut
-//
+//	streamindex - the index of the output stream as returned by NewSsrcStreamOut
 func (rs *Session) SsrcStreamOutForIndex(streamIndex uint32) *SsrcStream {
 	rs.streamsMapMutex.RLock()
 	defer rs.streamsMapMutex.RUnlock()
@@ -413,7 +398,6 @@ func (rs *Session) SsrcStreamOutForIndex(streamIndex uint32) *SsrcStream {
 }
 
 // SsrcStreamIn gets the standard input stream.
-//
 func (rs *Session) SsrcStreamIn() *SsrcStream {
 	rs.streamsMapMutex.RLock()
 	defer rs.streamsMapMutex.RUnlock()
@@ -423,8 +407,7 @@ func (rs *Session) SsrcStreamIn() *SsrcStream {
 
 // SsrcStreamInForIndex Get the input stream with index.
 //
-//   streamindex - the index of the output stream as returned by NewSsrcStreamOut
-//
+//	streamindex - the index of the output stream as returned by NewSsrcStreamOut
 func (rs *Session) SsrcStreamInForIndex(streamIndex uint32) *SsrcStream {
 	rs.streamsMapMutex.RLock()
 	defer rs.streamsMapMutex.RUnlock()
@@ -438,7 +421,6 @@ func (rs *Session) SsrcStreamInForIndex(streamIndex uint32) *SsrcStream {
 // In this state the stream stops its activities, does not send any new data or
 // control packets. Eventually it will be in the state "is closed" and its resources
 // are returned to the system. An application must not re-use a session.
-//
 func (rs *Session) SsrcStreamClose() {
 	rs.SsrcStreamOutForIndex(0)
 }
@@ -447,8 +429,7 @@ func (rs *Session) SsrcStreamClose() {
 //
 // See description for SsrcStreamClose above.
 //
-//   streamindex - the index of the output stream as returned by NewSsrcStreamOut
-//
+//	streamindex - the index of the output stream as returned by NewSsrcStreamOut
 func (rs *Session) SsrcStreamCloseForIndex(streamIndex uint32) {
 	rs.RLock()
 	if rs.rtcpServiceActive {
@@ -479,7 +460,6 @@ func (rs *Session) SsrcStreamCloseForIndex(streamIndex uint32) {
 // of the rtp.TransportRecv interface it may enable the call to upper layer.
 //
 // Currently this is a No-Op - delegating is not yet implemented.
-//
 func (rs *Session) SetCallUpper(upper TransportRecv) {
 }
 
@@ -488,7 +468,6 @@ func (rs *Session) SetCallUpper(upper TransportRecv) {
 // The session just forwards this to the appropriate transport receiver.
 //
 // Only relevant if an application uses "simple RTP".
-//
 func (rs *Session) ListenOnTransports() (err error) {
 	return rs.transportRecv.ListenOnTransports()
 }
@@ -499,7 +478,6 @@ func (rs *Session) ListenOnTransports() (err error) {
 // of the rtp.TransportRecv interface it must implement this function.
 //
 // Delegating is not yet implemented. Applications receive data via the DataReceiveChan.
-//
 func (rs *Session) OnRecvData(rp *DataPacket) bool {
 	if !rp.IsValid() {
 		rp.FreePacket()
@@ -607,7 +585,6 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 //
 // Delegating is not yet implemented. Applications may receive control events via
 // the CtrlEventChan.
-//
 func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 	rs.RLock()
 	rtcpServiceActive := rs.rtcpServiceActive
@@ -817,7 +794,6 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 // If a upper layer application has registered a transportEnd channel forward the signal to it.
 //
 // Only relevant if an application uses "simple RTP".
-//
 func (rs *Session) CloseRecv() {
 	rs.RLock()
 	if rs.transportRecv != nil {
@@ -849,7 +825,6 @@ func (rs *Session) CloseRecv() {
 // all receiver transports were closed.
 //
 // Only relevant if an application uses "simple RTP".
-//
 func (rs *Session) SetEndChannel(ch TransportEnd) {
 	rs.Lock()
 	rs.transportEndUpper = ch
@@ -864,7 +839,6 @@ func (rs *Session) SetEndChannel(ch TransportEnd) {
 //
 // The method writes the packet of an active output stream to all known remote destinations.
 // This functions updates some statistical values to enable RTCP processing.
-//
 func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 	strOut, _, _ := rs.lookupSsrcMapOut(rp.Ssrc())
 
@@ -874,9 +848,8 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 		return 0, nil
 	}
 
-	strOut.SenderPacketCnt++
-	strOut.SenderOctectCnt += uint32(len(rp.Payload()))
-	strOut.resolveSendReportTstamps()
+	strOut.sentPktCnt++
+	strOut.sentOctCnt += uint32(len(rp.Payload()))
 
 	rs.RLock()
 	ch := rs.rtcpCtrlChan
@@ -918,7 +891,6 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 //
 // The method sends an RTCP packet of an active output stream to all known remote destinations.
 // Usually normal applications don't use this function, RTCP is handled internally.
-//
 func (rs *Session) WriteCtrl(rp *CtrlPacket) (n int, err error) {
 	// Check here if SRTCP is enabled for the SSRC of the packet - a stream attribute
 	strOut, _, _ := rs.lookupSsrcMapOut(rp.Ssrc(0))

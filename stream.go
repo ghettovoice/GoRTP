@@ -115,6 +115,8 @@ type SsrcStream struct {
 	// The following two field are active for ouput streams only
 	initialTime  int64
 	initialStamp uint32
+	sentPktCnt   uint32
+	sentOctCnt   uint32
 
 	sequenceNumber uint16
 	ssrc           uint32
@@ -327,19 +329,21 @@ func (so *SsrcStream) readRecvReport(report recvReport) {
 	so.Unlock()
 }
 
-func (so *SsrcStream) resolveSendReportTstamps() {
+func (so *SsrcStream) resolveSendReport() {
 	tm := time.Now().UnixNano()
 	so.NtpTime = tm
 	tm1 := uint32(tm-so.initialTime) / 1e6                               // time since session creation in ms
 	tm1 *= uint32(PayloadFormatMap[int(so.payloadType)].ClockRate / 1e3) // compute number of samples
 	tm1 += so.initialStamp
 	so.RtpTimestamp = tm1
+	so.SenderPacketCnt = so.sentPktCnt
+	so.SenderOctectCnt = so.sentOctCnt
 }
 
 // fillSenderInfo fills in the senderInfo.
 func (so *SsrcStream) fillSenderInfo(info senderInfo) {
 	so.Lock()
-	so.resolveSendReportTstamps()
+	so.resolveSendReport()
 	info.setOctetCount(so.SenderOctectCnt)
 	info.setPacketCount(so.SenderPacketCnt)
 	sec, frac := toNtpStamp(so.NtpTime)
@@ -607,8 +611,6 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 		}
 		si.statistics.lastPacketTransitTime = transitTime
 	}
-
-	si.resolveRecvReport()
 
 	return
 }
