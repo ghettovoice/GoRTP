@@ -107,11 +107,13 @@ type SsrcStream struct {
 	// Read only, to set item use SetSdesItem()
 	sdesChunkLen int // pre-computed SDES chunk length - updated when setting a new name, relevant for output streams
 
+	rtt int64
+
 	// the following two field are active for input streams ony
 	prevConflictAddr *Address
 	statistics       ctrlStatistics
 
-	// The following two field are active for ouput streams only
+	// The following 4 field are active for ouput streams only
 	initialTime  int64
 	initialStamp uint32
 	sentPktCnt   uint32
@@ -325,6 +327,13 @@ func (so *SsrcStream) readRecvReport(report recvReport) {
 	so.Jitter = report.jitter()
 	so.LastSr = report.lsr()
 	so.Dlsr = report.dlsr()
+
+	if so.LastSr > 0 {
+		sec, frac := toNtpStamp(time.Now().UnixNano())
+		a := sec<<16 | frac>>16
+		rtt := a - so.LastSr - so.Dlsr
+		so.rtt = fromNtp((rtt>>16)+ntpEpochOffset, rtt<<16)
+	}
 	so.Unlock()
 }
 
@@ -699,11 +708,9 @@ func (si *SsrcStream) resolveRecvReport() {
 	var lsr, dlsr uint32
 	if si.statistics.lastRtcpSrTime != 0 {
 		sec, frac := toNtpStamp(si.statistics.lastRtcpSrTime)
-		ntp := (uint64(sec) << 32) | uint64(frac)
-		lsr = uint32(ntp) >> 16
+		lsr = sec<<16 | frac>>16
 		sec, frac = toNtpStamp(time.Now().UnixNano() - si.statistics.lastRtcpSrTime)
-		ntp = (uint64(sec) << 32) | uint64(frac)
-		dlsr = uint32(ntp) >> 16
+		dlsr = (sec-ntpEpochOffset)<<16 | frac>>16
 	}
 
 	si.PacketsLost = lost
@@ -742,6 +749,8 @@ func (si *SsrcStream) readSenderInfo(info senderInfo) {
 	si.RtpTimestamp = info.rtpTimeStamp()
 	si.SenderPacketCnt = info.packetCount()
 	si.SenderOctectCnt = info.octetCount()
+
+	si.rtt = time.Now().UnixNano() - si.NtpTime
 	si.Unlock()
 }
 
@@ -829,5 +838,3 @@ func (si *SsrcStream) parseSdesChunk(sc sdesChunk) {
 		si.Unlock()
 	}
 }
-
-func (str *SsrcStream) GetStats() {}

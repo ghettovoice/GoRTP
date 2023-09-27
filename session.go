@@ -905,3 +905,76 @@ func (rs *Session) WriteCtrl(rp *CtrlPacket) (n int, err error) {
 
 	return n, nil
 }
+
+type StreamStats struct {
+	Ssrc  uint32
+	Kind  string
+	Codec string
+	// sender
+	PacketsSent uint64
+	BytesSent   uint64
+	// receiver
+	PacketsReceived uint64
+	BytesReceived   uint64
+	PacketsLost     int64
+	Jitter          float64
+	Rtt             float64
+}
+
+type SessionStats struct {
+	Tstamp   time.Time
+	Inbound  []StreamStats
+	Outbound []StreamStats
+}
+
+func (rs *Session) GetStats() SessionStats {
+	stats := SessionStats{
+		Tstamp: time.Now(),
+	}
+
+	rs.streamsMapMutex.RLock()
+	defer rs.streamsMapMutex.RUnlock()
+
+	if len(rs.streamsIn) > 0 {
+		stats.Inbound = make([]StreamStats, len(rs.streamsIn))
+		for idx, str := range rs.streamsIn {
+			stats.Inbound[idx] = buildStreamStats(str)
+		}
+	}
+
+	if len(rs.streamsOut) > 0 {
+		stats.Outbound = make([]StreamStats, len(rs.streamsOut))
+		for idx, str := range rs.streamsOut {
+			stats.Outbound[idx] = buildStreamStats(str)
+		}
+	}
+
+	return stats
+}
+
+func buildStreamStats(str *SsrcStream) StreamStats {
+	pt := PayloadFormatMap[int(str.payloadType)]
+	var kind string
+	switch pt.MediaType {
+	case Audio:
+		kind = "audio"
+	case Video:
+		kind = "video"
+	}
+
+	str.RLock()
+	stats := StreamStats{
+		Ssrc:            str.ssrc,
+		Kind:            kind,
+		Codec:           pt.Name,
+		PacketsSent:     uint64(str.SenderPacketCnt),
+		BytesSent:       uint64(str.SenderOctectCnt),
+		PacketsReceived: uint64(str.statistics.packetCount),
+		BytesReceived:   uint64(str.statistics.octetCount),
+		PacketsLost:     int64(str.PacketsLost),
+		Jitter:          float64(str.Jitter) / float64(pt.ClockRate),
+		Rtt:             float64(str.rtt) / 1e9,
+	}
+	str.RUnlock()
+	return stats
+}
