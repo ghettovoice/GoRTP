@@ -120,6 +120,7 @@ type SsrcStream struct {
 	sentOctCnt   uint32
 
 	sequenceNumber uint16
+	startSeqNo     uint16
 	ssrc           uint32
 	payloadType    byte
 	sender         bool // true if this source (ouput or input) was identified as active sender
@@ -210,6 +211,7 @@ func newSsrcStreamOut(own *Address, ssrc uint32, sequenceNo uint16) (so *SsrcStr
 	if sequenceNo == 0 {
 		so.newSequence()
 	}
+	so.startSeqNo = so.sequenceNumber
 	so.IpAddr = own.IpAddr
 	so.DataPort = own.DataPort
 	so.CtrlPort = own.CtrlPort
@@ -327,6 +329,11 @@ func (so *SsrcStream) readRecvReport(report recvReport) {
 	so.Jitter = report.jitter()
 	so.LastSr = report.lsr()
 	so.Dlsr = report.dlsr()
+
+	cycles := uint64(so.HighestSeqNo & 0xFFFF0000)
+	nr := uint64(so.HighestSeqNo & 0x0000FFFF)
+	highest := cycles*0xFFFF + nr
+	so.statistics.packetCount = uint32(highest - uint64(so.PacketsLost) - uint64(so.startSeqNo) + 1)
 
 	if so.LastSr > 0 {
 		sec, frac := toNtpStamp(time.Now().UnixNano())
