@@ -907,18 +907,17 @@ func (rs *Session) WriteCtrl(rp *CtrlPacket) (n int, err error) {
 }
 
 type StreamStats struct {
-	Ssrc  uint32
-	Kind  string
-	Codec string
+	Ssrc        uint32
+	PayloadType uint8
 	// sender
 	PacketsSent uint64
 	BytesSent   uint64
 	// receiver
 	PacketsReceived uint64
 	BytesReceived   uint64
-	PacketsLost     int64
-	Jitter          float64
-	Rtt             float64
+	PacketsLost     uint64
+	Jitter          uint32
+	Rtt             int64
 }
 
 type SessionStats struct {
@@ -953,27 +952,17 @@ func (rs *Session) GetStats() SessionStats {
 }
 
 func buildStreamStats(str *SsrcStream) StreamStats {
-	pt := PayloadFormatMap[int(str.payloadType)]
-	var kind string
-	switch pt.MediaType {
-	case Audio:
-		kind = "audio"
-	case Video:
-		kind = "video"
-	}
-
 	str.RLock()
 	stats := StreamStats{
 		Ssrc:            str.ssrc,
-		Kind:            kind,
-		Codec:           pt.Name,
+		PayloadType:     str.payloadType,
 		PacketsSent:     uint64(str.SenderPacketCnt),
 		BytesSent:       uint64(str.SenderOctectCnt),
 		PacketsReceived: uint64(str.statistics.packetCount),
 		BytesReceived:   uint64(str.statistics.octetCount),
-		PacketsLost:     int64(str.PacketsLost),
-		Jitter:          float64(str.Jitter) / float64(pt.ClockRate),
-		Rtt:             float64(str.rtt) / 1e9,
+		PacketsLost:     uint64(str.PacketsLost),
+		Jitter:          str.Jitter,
+		Rtt:             str.rtt,
 	}
 	str.RUnlock()
 	return stats
