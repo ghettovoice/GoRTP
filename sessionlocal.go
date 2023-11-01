@@ -247,6 +247,58 @@ func (rs *Session) rtcpService(ti, td int64) {
 			outActive = 0
 			inActive = 0
 
+			// send XR Ref tstamp for each active receiver
+			// https://datatracker.ietf.org/doc/html/rfc3611#section-4.4
+			ts := time.Now().UnixNano()
+			for _, str := range streamsIn {
+				str.Lock()
+				if str.streamStatus == active {
+					rc, rcOffset := newCtrlPacket()
+					rc.SetType(0, RtcpXr)
+					rc.addHeaderSsrc(rcOffset, str.ssrc)
+					rc.addExtRefTimeBlock(ts)
+					rc.SetLength(0, uint16(rc.InUse()/4-1))
+					rs.WriteCtrl(rc)
+					rc.FreePacket()
+				}
+				str.Unlock()
+			}
+
+			// send XR DLRR for each active sender
+			// https://datatracker.ietf.org/doc/html/rfc3611#section-4.5
+			var (
+				ssrc  uint32
+				dlrrs [][3]uint32
+			)
+			rc, rcOffset := newCtrlPacket()
+			rc.SetType(0, RtcpXr)
+			rc.addHeaderSsrc(rcOffset, 0)
+			for _, str := range streamsOut {
+				str.Lock()
+				if str.streamStatus == active {
+					if ssrc == 0 {
+						ssrc = str.ssrc
+					}
+					dlrrs = append(dlrrs, [3]uint32{
+						str.ssrc,
+						str.statistics.lastRtcpExtRefNtpTime,
+						func() uint32 {
+							if str.statistics.lastRtcpExtRefRecvTime == 0 {
+								return 0
+							}
+							return uint32(time.Duration(ts-str.statistics.lastRtcpExtRefRecvTime).Seconds() * 65536)
+						}(),
+					})
+				}
+				str.Unlock()
+			}
+			if ssrc > 0 && len(dlrrs) > 0 {
+				rc.SetSsrc(0, ssrc)
+				rc.addExtDlrrBlock(dlrrs)
+				rc.SetLength(0, uint16(rc.InUse()/4-1))
+				rs.WriteCtrl(rc)
+			}
+			rc.FreePacket()
 		case cmd = <-rtcpCtrlChan:
 			switch cmd & rtcpCtrlCmdMask {
 			case rtcpStopService:

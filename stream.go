@@ -76,6 +76,9 @@ type ctrlStatistics struct {
 	receivedPrior,
 	badSeqNum,
 	seqNumAccum uint32
+
+	lastRtcpExtRefNtpTime  uint32 // NTP tstamp from the last XR Receiver Reference time block
+	lastRtcpExtRefRecvTime int64  // receive tstamp of the last XR Receiver Reference time
 }
 
 // SenderInfoData stores the counters if used for an output stream, stores the received sender info data for an input stream.
@@ -715,9 +718,9 @@ func (si *SsrcStream) resolveRecvReport() {
 	var lsr, dlsr uint32
 	if si.statistics.lastRtcpSrTime != 0 {
 		sec, frac := toNtpStamp(si.statistics.lastRtcpSrTime)
-		lsr = sec<<16 | frac>>16
-		sec, frac = toNtpStamp(time.Now().UnixNano() - si.statistics.lastRtcpSrTime)
-		dlsr = (sec-ntpEpochOffset)<<16 | frac>>16
+		ntp := (uint64(sec) << 32) | uint64(frac)
+		lsr = uint32(ntp) >> 16
+		dlsr = uint32(time.Duration(time.Now().UnixNano()-si.statistics.lastRtcpSrTime).Seconds() * 65536)
 	}
 
 	si.PacketsLost = lost
@@ -756,8 +759,6 @@ func (si *SsrcStream) readSenderInfo(info senderInfo) {
 	si.RtpTimestamp = info.rtpTimeStamp()
 	si.SenderPacketCnt = info.packetCount()
 	si.SenderOctectCnt = info.octetCount()
-
-	si.rtt = time.Now().UnixNano() - si.NtpTime
 	si.Unlock()
 }
 

@@ -647,7 +647,6 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 			}
 			// Advance to the next packet in the compound.
 			offset += pktLen
-
 		case RtcpRR:
 			if offset+pktLen > len(rp.Buffer()) {
 				return false
@@ -742,7 +741,6 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 			}
 			// Advance to the next packet in the compound.
 			offset += pktLen
-
 		case RtcpApp:
 			// Advance to the next packet in the compound.
 			offset += pktLen
@@ -753,9 +751,50 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 			// Advance to the next packet in the compound.
 			offset += pktLen
 		case RtcpXr:
+			if offset+pktLen > len(rp.Buffer()) {
+				return false
+			}
+
+			str, _, existing := rs.rtcpSenderCheck(rp, offset)
+			if str == nil {
+				rp.FreePacket()
+				return false
+			}
+
+			if !existing {
+				rs.streamsMapMutex.RLock()
+				ctrlEvArr = append(ctrlEvArr, newCrtlEvent(NewStreamCtrl, str.Ssrc(), rs.streamInIndex-1))
+				rs.streamsMapMutex.RUnlock()
+			}
+
+			// offset to first extended report block
+			// https://datatracker.ietf.org/doc/html/rfc3611#section-2
+			rbOffset := offset + rtcpHeaderLength + rtcpSsrcLength
+			for rbOffset < offset+pktLen {
+				rb := rp.toExtReport(rbOffset)
+				switch rb.rtype() {
+				case 4: // https://datatracker.ietf.org/doc/html/rfc3611#section-4.4
+					str.Lock()
+					str.statistics.lastRtcpExtRefNtpTime = uint32(rb.refTime() >> 16)
+					str.statistics.lastRtcpExtRefRecvTime = str.statistics.lastRtcpPacketTime
+					str.Unlock()
+				case 5:
+					for _, arr := range rb.dlrrs() {
+						if arr[1] == 0 || arr[2] == 0 {
+							continue
+						}
+						if str, _, exist := rs.lookupSsrcMapIn(arr[0]); str != nil && exist {
+							sec, frac := toNtpStamp(str.statistics.lastRtcpPacketTime)
+							a := sec<<16 | frac>>16
+							rtt := a - arr[1] - arr[2]
+							str.rtt = fromNtp((rtt>>16)+ntpEpochOffset, rtt<<16)
+						}
+					}
+				}
+				rbOffset += rb.length()
+			}
 			// Advance to the next packet in the compound.
 			offset += pktLen
-
 		}
 	}
 
@@ -882,16 +921,16 @@ func (rs *Session) WriteData(rp *DataPacket) (n int, err error) {
 // The method sends an RTCP packet of an active output stream to all known remote destinations.
 // Usually normal applications don't use this function, RTCP is handled internally.
 func (rs *Session) WriteCtrl(rp *CtrlPacket) (n int, err error) {
-	// Check here if SRTCP is enabled for the SSRC of the packet - a stream attribute
-	strOut, _, _ := rs.lookupSsrcMapOut(rp.Ssrc(0))
+	// // Check here if SRTCP is enabled for the SSRC of the packet - a stream attribute
+	// strOut, _, _ := rs.lookupSsrcMapOut(rp.Ssrc(0))
 
-	strOut.RLock()
-	if strOut.streamStatus != active {
-		strOut.RUnlock()
+	// strOut.RLock()
+	// if strOut.streamStatus != active {
+	// 	strOut.RUnlock()
 
-		return 0, nil
-	}
-	strOut.RUnlock()
+	// 	return 0, nil
+	// }
+	// strOut.RUnlock()
 
 	rs.RLock()
 	for _, remote := range rs.remotes {

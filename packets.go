@@ -310,8 +310,8 @@ func (rp *DataPacket) Marker() bool {
 // RTP packet to a multiple of 4, otherwise the given value is used which must be
 // greater than 1.
 //
-//     NOTE: padding is only done when adding payload to the packet, thus if an application
-//           required padding then seeting the payload should be the last step in RTP packet creation
+//	NOTE: padding is only done when adding payload to the packet, thus if an application
+//	      required padding then seeting the payload should be the last step in RTP packet creation
 func (rp *DataPacket) SetPadding(p bool, padTo int) {
 	if padTo == 0 {
 		padTo = padToMultipleOf
@@ -855,4 +855,73 @@ func (bye byeData) getReason(ssrcCnt int) string {
 		return ""
 	}
 	return string(bye[offset : offset+length])
+}
+
+func (rp *CtrlPacket) toExtReport(offset int) extReport {
+	if offset+extReportHeaderLen > len(rp.buffer) {
+		return nil
+	}
+	length := (int(binary.BigEndian.Uint16(rp.buffer[offset+lengthOffset:])) + 1) * 4
+	return rp.buffer[offset : offset+length]
+}
+
+// https://datatracker.ietf.org/doc/html/rfc3611#section-3
+type extReport []byte
+
+const (
+	extReportHeaderLen = 4
+)
+
+func (r extReport) rtype() uint8 {
+	return r[0]
+}
+
+func (r extReport) length() int {
+	return (int(binary.BigEndian.Uint16(r[lengthOffset:])) + 1) * 4
+}
+
+// https://datatracker.ietf.org/doc/html/rfc3611#section-4.4
+func (r extReport) refTime() uint64 {
+	return binary.BigEndian.Uint64(r[extReportHeaderLen:])
+}
+
+func (r extReport) dlrrs() [][3]uint32 {
+	length := r.length() - 4
+	offset := extReportHeaderLen
+	var dlrrs [][3]uint32
+	for offset < length {
+		dlrrs = append(dlrrs, [3]uint32{
+			binary.BigEndian.Uint32(r[offset:]),
+			binary.BigEndian.Uint32(r[offset+4:]),
+			binary.BigEndian.Uint32(r[offset+8:]),
+		})
+		offset += 12
+	}
+	return dlrrs
+}
+
+func (rp *CtrlPacket) addExtRefTimeBlock(ts int64) int {
+	rp.buffer[rp.inUse] = 4
+	binary.BigEndian.PutUint16(rp.buffer[rp.inUse+lengthOffset:], 2)
+	rp.inUse += extReportHeaderLen
+
+	sec, frac := toNtpStamp(ts)
+	binary.BigEndian.PutUint32(rp.buffer[rp.inUse:], sec)
+	binary.BigEndian.PutUint32(rp.buffer[rp.inUse+4:], frac)
+	rp.inUse += 8
+	return rp.inUse
+}
+
+func (rp *CtrlPacket) addExtDlrrBlock(dlrrs [][3]uint32) int {
+	rp.buffer[rp.inUse] = 5
+	binary.BigEndian.PutUint16(rp.buffer[rp.inUse+lengthOffset:], uint16(len(dlrrs)*3))
+	rp.inUse += extReportHeaderLen
+
+	for _, arr := range dlrrs {
+		binary.BigEndian.PutUint32(rp.buffer[rp.inUse:], arr[0])
+		binary.BigEndian.PutUint32(rp.buffer[rp.inUse+4:], arr[1])
+		binary.BigEndian.PutUint32(rp.buffer[rp.inUse+8:], arr[2])
+		rp.inUse += 12
+	}
+	return rp.inUse
 }
