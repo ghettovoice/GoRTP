@@ -974,16 +974,16 @@ func (rs *Session) GetStats() SessionStats {
 	defer rs.streamsMapMutex.RUnlock()
 
 	if len(rs.streamsIn) > 0 {
-		stats.Inbound = make([]StreamStats, len(rs.streamsIn))
-		for idx, str := range rs.streamsIn {
-			stats.Inbound[idx] = buildStreamStats(str)
+		stats.Inbound = make([]StreamStats, 0, len(rs.streamsIn))
+		for _, str := range rs.streamsIn {
+			stats.Inbound = append(stats.Inbound, buildStreamStats(str))
 		}
 	}
 
 	if len(rs.streamsOut) > 0 {
-		stats.Outbound = make([]StreamStats, len(rs.streamsOut))
-		for idx, str := range rs.streamsOut {
-			stats.Outbound[idx] = buildStreamStats(str)
+		stats.Outbound = make([]StreamStats, 0, len(rs.streamsOut))
+		for _, str := range rs.streamsOut {
+			stats.Outbound = append(stats.Outbound, buildStreamStats(str))
 		}
 	}
 
