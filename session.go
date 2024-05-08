@@ -582,6 +582,8 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 // Delegating is not yet implemented. Applications may receive control events via
 // the CtrlEventChan.
 func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
+	defer rp.FreePacket()
+
 	rs.RLock()
 	rtcpServiceActive := rs.rtcpServiceActive
 	rs.RUnlock()
@@ -591,7 +593,6 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 	}
 
 	if pktType := rp.Type(0); pktType != RtcpSR && pktType != RtcpRR {
-		rp.FreePacket()
 		return false
 	}
 	// Check here if SRTCP is enabled for the SSRC of the packet - a stream attribute
@@ -599,6 +600,7 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 	ctrlEvArr := make([]*CtrlEvent, 0, 10)
 
 	offset := 0
+loop:
 	for offset < rp.inUse {
 		pktLen := int((rp.Length(offset) + 1) * 4)
 
@@ -614,7 +616,6 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 				// Below commented line was causing segmentation-fault. Calling str.Ssrc() for nil str
 				// Probably because of out-of-order coming UDP packets like receiving RTCP packets for already closed streams.
 				// So I preferred to discard such RTCP packets. --LS
-				rp.FreePacket()
 				return false
 				//ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
 			} else {
@@ -658,7 +659,6 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 				// Below commented line was causing segmentation-fault. Calling str.Ssrc() for nil str
 				// Probably because of out-of-order coming UDP packets like receiving RTCP packets for already closed streams.
 				// So I preferred to discard such RTCP packets. --LS
-				rp.FreePacket()
 				return false
 				//ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
 			} else {
@@ -758,7 +758,6 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 
 			str, _, existing := rs.rtcpSenderCheck(rp, offset)
 			if str == nil {
-				rp.FreePacket()
 				return false
 			}
 
@@ -785,10 +784,12 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 							continue
 						}
 						if str, _, exist := rs.lookupSsrcMapIn(arr[0]); str != nil && exist {
+							str.Lock()
 							sec, frac := toNtpStamp(str.statistics.lastRtcpPacketTime)
 							a := sec<<16 | frac>>16
 							rtt := a - arr[1] - arr[2]
 							str.rtt = fromNtp((rtt>>16)+ntpEpochOffset, rtt<<16)
+							str.Unlock()
 						}
 					}
 				}
@@ -796,6 +797,10 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 			}
 			// Advance to the next packet in the compound.
 			offset += pktLen
+		default:
+			// unknown report or trash
+			// stop read to avoid infinite loop
+			break loop
 		}
 	}
 
@@ -815,7 +820,6 @@ func (rs *Session) OnRecvCtrl(rp *CtrlPacket) bool {
 	rs.avrgPacketLength = (1.0/16.0)*size + (15.0/16.0)*rs.avrgPacketLength
 	rs.Unlock()
 
-	rp.FreePacket()
 	ctrlEvArr = nil
 
 	return true
