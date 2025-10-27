@@ -150,7 +150,7 @@ func (rs *Session) rtcpService(ti, td int64) {
 					str.streamStatus = isClosed
 				case isClosed:
 					rs.streamsMapMutex.Lock()
-					delete(rs.streamsOut, idx)
+					delete(rs.streamsIn, idx)
 					rs.streamsMapMutex.Unlock()
 				}
 				str.Unlock()
