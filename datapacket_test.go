@@ -348,3 +348,41 @@ func TestRtpPacket(t *testing.T) {
     ntpCheck(t)
 //    intervalCheck(t)
 }
+
+func TestDataPacketIsValid(t *testing.T) {
+    parseFlags()
+
+    rp := newDataPacket()
+    if !rp.IsValid() {
+        t.Fatal("expected new RTP packet to be valid")
+    }
+
+    rp = newDataPacket()
+    rp.inUse = 1
+    if rp.IsValid() {
+        t.Fatal("expected packet with too short length to be invalid")
+    }
+
+    rp = newDataPacket()
+    rp.buffer[0] |= 0x01 // CC = 1
+    if rp.IsValid() {
+        t.Fatal("expected packet with CSRC offset beyond inUse to be invalid")
+    }
+
+    rp = newDataPacket()
+    rp.buffer[0] |= extensionBit
+    rp.inUse = rtpHeaderLength + 4
+    rp.buffer[rtpHeaderLength+2] = 0
+    rp.buffer[rtpHeaderLength+3] = 2 // extension length words -> 12 bytes total
+    if rp.IsValid() {
+        t.Fatal("expected packet with extension length beyond inUse to be invalid")
+    }
+
+    rp = newDataPacket()
+    rp.buffer[0] |= paddingBit
+    rp.inUse = rtpHeaderLength + 2
+    rp.buffer[rp.inUse-1] = 10
+    if rp.IsValid() {
+        t.Fatal("expected packet with invalid padding to be invalid")
+    }
+}

@@ -172,7 +172,6 @@ func (rp *DataPacket) CsrcCount() uint8 {
 // The new CSRC list replaces an existing CSCR list. The list can have a maximum length of 16 CSCR values,
 // if the list contains more values the method leaves the RTP packet untouched.
 func (rp *DataPacket) SetCsrcList(csrc []uint32) {
-
 	if len(csrc) > 16 {
 		return
 	}
@@ -376,7 +375,16 @@ func (rp *DataPacket) Payload() []byte {
 	payOffset := int(rp.CsrcCount()*4+rtpHeaderLength) + rp.ExtensionLength()
 	pad := 0
 	if rp.Padding() {
+		if rp.inUse <= 0 {
+			return nil
+		}
 		pad = int(rp.buffer[rp.inUse-1])
+	}
+	if payOffset < 0 || payOffset > rp.inUse {
+		return nil
+	}
+	if pad < 0 || pad > (rp.inUse-payOffset) {
+		return nil
 	}
 	return rp.buffer[payOffset : rp.inUse-pad]
 }
@@ -387,7 +395,6 @@ func (rp *DataPacket) Payload() []byte {
 // in SetPadding. SetPayload performs padding only if the payload length is greate zero. A payload of
 // zero length removes an existing payload including a possible padding
 func (rp *DataPacket) SetPayload(payload []byte) {
-
 	payOffset := int(rp.CsrcCount()*4+rtpHeaderLength) + rp.ExtensionLength()
 	payloadLenOld := rp.inUse - payOffset
 
@@ -430,8 +437,36 @@ func (rp *DataPacket) IsValid() bool {
 	if (rp.buffer[0] & version2Bit) != version2Bit {
 		return false
 	}
+	if rp.inUse < rtpHeaderLength || rp.inUse > cap(rp.buffer) {
+		return false
+	}
 	if PayloadFormatMap[int(rp.PayloadType())] == nil {
 		return false
+	}
+	baseOffset := rtpHeaderLength + int(rp.CsrcCount())*4
+	if baseOffset > rp.inUse {
+		return false
+	}
+	payloadOffset := baseOffset
+	if rp.ExtensionBit() {
+		if baseOffset+4 > rp.inUse {
+			return false
+		}
+		extLenWords := binary.BigEndian.Uint16(rp.buffer[baseOffset+2:])
+		extLenBytes := int(extLenWords+1) * 4
+		payloadOffset += extLenBytes
+		if payloadOffset > rp.inUse {
+			return false
+		}
+	}
+	if rp.Padding() {
+		if rp.inUse <= 0 {
+			return false
+		}
+		pad := int(rp.buffer[rp.inUse-1])
+		if pad <= 0 || pad > (rp.inUse-payloadOffset) {
+			return false
+		}
 	}
 	return true
 }
@@ -478,7 +513,6 @@ var freeListRtcp = make(chan *CtrlPacket, freeListLengthRtcp)
 
 // newCtrlPacket gets a raw packet, initializes the first fixed RTCP header, advances inUse to point after new fixed header.
 func newCtrlPacket() (rp *CtrlPacket, offset int) {
-
 	// Grab a packet if available; allocate if not.
 	select {
 	case rp = <-freeListRtcp: // Got one; nothing more to do.
@@ -570,10 +604,12 @@ func (rp *CtrlPacket) SetType(offset, packetType int) {
 	rp.buffer[offset+packetTypeOffset] = byte(packetType)
 }
 
-type senderInfo []byte
-type recvReport []byte
-type sdesChunk []byte
-type byeData []byte
+type (
+	senderInfo []byte
+	recvReport []byte
+	sdesChunk  []byte
+	byeData    []byte
+)
 
 /*
  * Functions to fill/access a sender info structure
@@ -783,7 +819,6 @@ func (sdes sdesChunk) getItemText(itemOffset, length int) string {
 }
 
 func (sc sdesChunk) chunkLen() (int, bool) {
-
 	// length is at least: SSRC plus SdesEnd byte
 	if 4+1 > len(sc) {
 		return 0, false
