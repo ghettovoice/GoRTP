@@ -170,9 +170,9 @@ func (str *SsrcStream) SequenceNo() uint16 {
 //
 //	pt - the payload type number.
 func (str *SsrcStream) SetPayloadType(pt byte) (ok bool) {
-	if _, ok = PayloadFormatMap[int(pt)]; !ok {
-		return
-	}
+	// if _, ok = PayloadFormatMap[int(pt)]; !ok {
+	// 	return
+	// }
 
 	str.Lock()
 	str.payloadType = pt
