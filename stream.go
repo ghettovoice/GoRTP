@@ -163,16 +163,23 @@ func (str *SsrcStream) SequenceNo() uint16 {
 // According to RFC 3550 an application may change the payload type during a
 // the lifetime of a RTP stream. Refer to rtp.PayloadFormat type.
 //
-// The method returns false and does not set the payload type if the payload format
-// is not available in rtp.PayloadFormatMap. An application must either use a known
-// format or set the new payload format at the correct index before it sets the
-// payload type of the stream.
+// For static payload types (PT < 96) the method requires a matching entry in the global
+// PayloadFormatMap and returns false if none is found.
+//
+// For dynamic payload types (PT 96–127) the method always succeeds because dynamic PTs
+// are session-scoped; their format is registered via Session.RegisterPayloadFormat.
+// Applications that use dynamic PTs should prefer Session.SetPayloadTypeForStream, which
+// additionally validates against the session-level TX registry.
 //
 //	pt - the payload type number.
 func (str *SsrcStream) SetPayloadType(pt byte) (ok bool) {
-	// if _, ok = PayloadFormatMap[int(pt)]; !ok {
-	// 	return
-	// }
+	// Dynamic PTs are session-scoped and may not appear in the global map.
+	if pt < 96 {
+		if _, ok = PayloadFormatMap[int(pt)]; !ok {
+			return
+		}
+	}
+	ok = true
 
 	str.Lock()
 	str.payloadType = pt
@@ -347,11 +354,19 @@ func (so *SsrcStream) readRecvReport(report recvReport) {
 	so.Unlock()
 }
 
-func (so *SsrcStream) resolveSendReport() {
+// resolveSendReport computes the sender-report fields.
+//
+// resolveFormat is a callback that resolves a PT to its PayloadFormat using the
+// session-level TX registry (with global-map fallback); pass
+// func(pt int) *PayloadFormat { return rs.resolvePayloadFormat(pt, PayloadDirectionTX) }
+// at call sites inside the session.
+func (so *SsrcStream) resolveSendReport(resolveFormat func(pt int) *PayloadFormat) {
 	tm := time.Now().UnixNano()
 	so.NtpTime = tm
-	tm1 := uint32(tm-so.initialTime) / 1e6                               // time since session creation in ms
-	tm1 *= uint32(PayloadFormatMap[int(so.payloadType)].ClockRate / 1e3) // compute number of samples
+	tm1 := uint32(tm-so.initialTime) / 1e6 // time since session creation in ms
+	if format := resolveFormat(int(so.payloadType)); format != nil {
+		tm1 *= uint32(format.ClockRate / 1e3) // compute number of samples
+	}
 	tm1 += so.initialStamp
 	so.RtpTimestamp = tm1
 	so.SenderPacketCnt = so.sentPktCnt
@@ -359,9 +374,12 @@ func (so *SsrcStream) resolveSendReport() {
 }
 
 // fillSenderInfo fills in the senderInfo.
-func (so *SsrcStream) fillSenderInfo(info senderInfo) {
+//
+// resolveFormat must resolve a PT to its PayloadFormat using the session-level TX registry;
+// see resolveSendReport for details.
+func (so *SsrcStream) fillSenderInfo(info senderInfo, resolveFormat func(pt int) *PayloadFormat) {
 	so.Lock()
-	so.resolveSendReport()
+	so.resolveSendReport(resolveFormat)
 	info.setOctetCount(so.SenderOctectCnt)
 	info.setPacketCount(so.SenderPacketCnt)
 	sec, frac := toNtpStamp(so.NtpTime)
@@ -531,7 +549,12 @@ func (si *SsrcStream) checkSsrcIncomingData(existingStream bool, rs *Session, rp
 
 // recordReceptionData checks validity (probation), sequence numbers, computes jitter, and records the statistics for incoming data packets.
 // See algorithms in chapter A.1 (sequence number handling) and A.8 (jitter computation)
-func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime int64) (result bool) {
+//
+// resolveFormat resolves a PT to its PayloadFormat via the session-level RX registry
+// (with global-map fallback). Pass
+// func(pt int) *PayloadFormat { return rs.resolvePayloadFormat(pt, PayloadDirectionRX) }
+// at all call sites inside the session.
+func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime int64, resolveFormat func(pt int) *PayloadFormat) (result bool) {
 	result = true
 
 	seq := rp.Sequence()
@@ -614,8 +637,13 @@ func (si *SsrcStream) recordReceptionData(rp *DataPacket, rs *Session, recvTime 
 
 		// compute the interarrival jitter estimation.
 		pt := int(rp.PayloadType())
-		// compute lastPacketTime to ms and clockrate as kHz
-		arrival := uint32(si.statistics.lastPacketTime / 1e6 * int64(PayloadFormatMap[pt].ClockRate/1e3))
+		// compute lastPacketTime to ms and clockrate as kHz;
+		// use the session-level RX registry so dynamic PTs are resolved correctly.
+		var clockRateKHz int64
+		if format := resolveFormat(pt); format != nil {
+			clockRateKHz = int64(format.ClockRate / 1e3)
+		}
+		arrival := uint32(si.statistics.lastPacketTime / 1e6 * clockRateKHz)
 		transitTime := arrival - rp.Timestamp()
 		if si.statistics.lastPacketTransitTime != 0 {
 			delta := int32(transitTime - si.statistics.lastPacketTransitTime)

@@ -77,7 +77,6 @@ type conflictMap map[uint32]*conflictAddr
 
 // rtcpService provides the RTCP service and sends RTCP reports at computed intervals.
 func (rs *Session) rtcpService(ti, td int64) {
-
 	granularity := time.Duration(250e6) // 250 ms
 	ssrcTimeout := 5 * td
 	dataTimeout := 2 * ti
@@ -330,7 +329,6 @@ func (rs *Session) rtcpService(ti, td int64) {
 //
 // Other output streams just add their sender reports and SDES info.
 func (rs *Session) buildRtcpPkt(strOut *SsrcStream, inStreamCnt int) (rc *CtrlPacket) {
-
 	var pktLen, offset int
 	strOut.RLock()
 	if strOut.sender {
@@ -341,7 +339,7 @@ func (rs *Session) buildRtcpPkt(strOut *SsrcStream, inStreamCnt int) (rc *CtrlPa
 
 		var info senderInfo
 		info, offset = rc.newSenderInfo()
-		strOut.fillSenderInfo(info) // create a sender info block after fixed header and SSRC.
+		strOut.fillSenderInfo(info, func(pt int) *PayloadFormat { return rs.resolvePayloadFormat(pt, PayloadDirectionTX) })
 	} else {
 		strOut.RUnlock()
 
@@ -423,7 +421,6 @@ func (rs *Session) addSdes(strOut *SsrcStream, rc *CtrlPacket) {
 // input streams to fill in the sreceiver reports. Only one output stream's sender report
 // contains receiver reports of our input streams.
 func (rs *Session) addSenderReport(strOut *SsrcStream, rc *CtrlPacket) {
-
 	strOut.RLock()
 	if !strOut.sender {
 		strOut.RUnlock()
@@ -442,7 +439,7 @@ func (rs *Session) addSenderReport(strOut *SsrcStream, rc *CtrlPacket) {
 
 	var info senderInfo
 	info, offset = rc.newSenderInfo()
-	strOut.fillSenderInfo(info) // create a sender info block after fixed header and SSRC.
+	strOut.fillSenderInfo(info, func(pt int) *PayloadFormat { return rs.resolvePayloadFormat(pt, PayloadDirectionTX) })
 
 	pktLen := (offset-headerOffset)/4 - 1
 	rc.SetLength(headerOffset, uint16(pktLen)) // length of RTCP packet in compound: fixed header, SR, 0*RR
@@ -746,7 +743,6 @@ const (
 //
 // The algorithm is copied from RFC 2550, A.7 and a little bit adapted to Go. This includes some important comments :-) .
 func rtcpInterval(members, senders int, rtcpBw, avrgSize float64, weSent, initial bool) (int64, int64) {
-
 	rtcpMinTime := rtcpMinimumTime
 	if initial {
 		rtcpMinTime /= 2

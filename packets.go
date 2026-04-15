@@ -433,14 +433,17 @@ func (rp *DataPacket) SetPayload(payload []byte) {
 	return
 }
 
+// IsValid performs structural validation of the RTP packet.
+//
+// Note: payload type (PT) is intentionally NOT checked here against the global
+// PayloadFormatMap because dynamic PTs (96–127) are session-scoped and their
+// validity must be evaluated in a session context.  The caller (Session.OnRecvData)
+// is responsible for PT-level validation using the session registry.
 func (rp *DataPacket) IsValid() bool {
 	if (rp.buffer[0] & version2Bit) != version2Bit {
 		return false
 	}
 	if rp.inUse < rtpHeaderLength || rp.inUse > cap(rp.buffer) {
-		return false
-	}
-	if PayloadFormatMap[int(rp.PayloadType())] == nil {
 		return false
 	}
 	baseOffset := rtpHeaderLength + int(rp.CsrcCount())*4

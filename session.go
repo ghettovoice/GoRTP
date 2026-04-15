@@ -51,6 +51,16 @@ type Session struct {
 	remoteIndex,
 	conflictIndex uint32
 
+	// Session-level payload format registries for dynamic PT (96–127).
+	// txPayloads holds formats keyed by the TX PT (PT used in outgoing packets,
+	// sourced from the remote SDP / answer).
+	// rxPayloads holds formats keyed by the RX PT (PT expected in incoming packets,
+	// sourced from the local SDP / offer).
+	// For static PT (<96) these maps are empty; the global PayloadFormatMap is used
+	// as a fallback automatically by resolvePayloadFormat.
+	txPayloads payloadMap
+	rxPayloads payloadMap
+
 	weSent            bool // is true if an output stream sent some RTP data
 	rtcpServiceActive bool // true if an input stream received RTP packets after last RR
 	rtcpCtrlChan      rtcpCtrlChan
@@ -149,6 +159,9 @@ func NewSession(tpw TransportWrite, tpr TransportRecv) *Session {
 	rs.MaxNumberOutStreams = maxNumberOutStreams
 	rs.MaxNumberInStreams = maxNumberInStreams
 
+	rs.txPayloads = make(payloadMap)
+	rs.rxPayloads = make(payloadMap)
+
 	rs.transportWrite = tpw
 	rs.transportRecv = tpr
 
@@ -186,6 +199,80 @@ func (rs *Session) RemoveRemote(index uint32) {
 	rs.Lock()
 	delete(rs.remotes, index)
 	rs.Unlock()
+}
+
+// RegisterPayloadFormat registers a payload format in the session-level registry for the
+// given direction.
+//
+// Call this after SDP negotiation to register dynamic payload types (96–127) that differ
+// between the local and remote SDPs:
+//
+//   - PayloadDirectionTX — PT used in outgoing packets (from remote SDP / answer).
+//   - PayloadDirectionRX — PT used in incoming packets (from local SDP / offer).
+//
+// For static payload types (<96) that are already present in the global PayloadFormatMap
+// there is no need to call this function unless you want to override their parameters for
+// this particular session.
+//
+// The session registry takes priority over the global PayloadFormatMap when resolving a PT.
+func (rs *Session) RegisterPayloadFormat(pt int, format *PayloadFormat, dir int) {
+	rs.Lock()
+	defer rs.Unlock()
+
+	switch dir {
+	case PayloadDirectionTX:
+		rs.txPayloads[pt] = format
+	case PayloadDirectionRX:
+		rs.rxPayloads[pt] = format
+	}
+}
+
+// resolvePayloadFormat looks up a PayloadFormat for the given PT and direction.
+//
+// Lookup order: session TX/RX map → global PayloadFormatMap (fallback for static PTs).
+// Returns nil if the PT is not registered in either registry.
+func (rs *Session) resolvePayloadFormat(pt int, dir int) *PayloadFormat {
+	rs.RLock()
+	defer rs.RUnlock()
+
+	var m payloadMap
+	switch dir {
+	case PayloadDirectionTX:
+		m = rs.txPayloads
+	case PayloadDirectionRX:
+		m = rs.rxPayloads
+	}
+
+	if m != nil {
+		if f, ok := m[pt]; ok {
+			return f
+		}
+	}
+	// Fallback to the global registry for static payload types.
+	return PayloadFormatMap[pt]
+}
+
+// SetPayloadTypeForStream sets the payload type on the output stream at streamIndex and
+// validates it against the session-level TX registry (falling back to the global map).
+//
+// This is the preferred method when dynamic payload types are in use.  It replaces
+// direct calls to SsrcStream.SetPayloadType, which only consults the global map.
+//
+// Returns false if the payload type is not registered in any registry.
+func (rs *Session) SetPayloadTypeForStream(streamIndex uint32, pt byte) bool {
+	if rs.resolvePayloadFormat(int(pt), PayloadDirectionTX) == nil {
+		return false
+	}
+
+	rs.streamsMapMutex.RLock()
+	str := rs.streamsOut[streamIndex]
+	rs.streamsMapMutex.RUnlock()
+
+	str.Lock()
+	str.payloadType = pt
+	str.Unlock()
+
+	return true
 }
 
 // NewOutputStream creates a new RTP output stream and returns its index.
@@ -249,9 +336,11 @@ func (rs *Session) StartSession() (err error) {
 	rs.streamsMapMutex.RLock()
 	if rs.RtcpSessionBandwidth == 0.0 { // If not set by application try to guess a value
 		for _, str := range rs.streamsOut {
-			format := PayloadFormatMap[int(str.PayloadType())]
+			// Use session-aware lookup (TX direction) so dynamic PTs are resolved correctly.
+			format := rs.resolvePayloadFormat(int(str.PayloadType()), PayloadDirectionTX)
 			if format == nil {
 				rs.RtcpSessionBandwidth += 64000. / 20.0 // some standard: 5% of a 64000 bit connection
+				continue
 			}
 			// Assumption: fixed codec used, 8 byte per sample, one channel
 			rs.RtcpSessionBandwidth += float64(format.ClockRate) * 8.0 / 20.
@@ -553,7 +642,8 @@ func (rs *Session) OnRecvData(rp *DataPacket) bool {
 		// 1) check for collisions and loops. If the packet cannot be assigned to a source, it will be rejected.
 		// 2) check the source is a sufficiently well known source
 		// TODO: also check CSRC identifiers.
-		if !str.checkSsrcIncomingData(existing, rs, rp) || !str.recordReceptionData(rp, rs, now) {
+		rxResolver := func(pt int) *PayloadFormat { return rs.resolvePayloadFormat(pt, PayloadDirectionRX) }
+		if !str.checkSsrcIncomingData(existing, rs, rp) || !str.recordReceptionData(rp, rs, now, rxResolver) {
 			// must be discarded due to collision or loop or invalid source
 			rs.sendDataCtrlEvent(StreamCollisionLoopData, ssrc, rs.streamInIndex-1)
 			rp.FreePacket()
@@ -617,7 +707,7 @@ loop:
 				// Probably because of out-of-order coming UDP packets like receiving RTCP packets for already closed streams.
 				// So I preferred to discard such RTCP packets. --LS
 				return false
-				//ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
+				// ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
 			} else {
 				if !existing {
 					rs.streamsMapMutex.RLock()
@@ -660,7 +750,7 @@ loop:
 				// Probably because of out-of-order coming UDP packets like receiving RTCP packets for already closed streams.
 				// So I preferred to discard such RTCP packets. --LS
 				return false
-				//ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
+				// ctrlEvArr = append(ctrlEvArr, newCrtlEvent(int(strIdx), str.Ssrc(), 0))
 			} else {
 				if !existing {
 					rs.streamsMapMutex.Lock()

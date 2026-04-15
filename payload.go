@@ -65,8 +65,25 @@ package rtp
 // 96-127    dynamic         ?                                                     [RFC3551]
 
 const (
-    Audio = 1
-    Video = 2
+	Audio = 1
+	Video = 2
+)
+
+// PayloadDirection identifies the direction a session-level payload format applies to.
+//
+// TX (outbound) corresponds to the PT negotiated in the remote SDP (answer),
+// i.e. the PT value placed in outgoing RTP packets.
+//
+// RX (inbound) corresponds to the PT negotiated in the local SDP (offer),
+// i.e. the PT value expected in incoming RTP packets.
+//
+// For static payload types (PT < 96) direction is usually irrelevant because
+// both sides use the same globally-assigned PT. For dynamic payload types
+// (96–127) the offerer and answerer may choose different PT values for the
+// same codec, so TX and RX PTs must be tracked separately per session.
+const (
+	PayloadDirectionTX = 1 // PT used when sending (from remote SDP / answer)
+	PayloadDirectionRX = 2 // PT used when receiving (from local SDP / offer)
 )
 
 // PayloadFormat holds RTP payload formats.
@@ -84,57 +101,56 @@ const (
 // For example if a dynamic format uses the payload number 98 then the application
 // may perform:
 //
-//     PayloadFormatMap[98] = &net.rtp.PayloadFormat{98, net.rtp.Audio, 41000, 2, "CD"}
-//
+//	PayloadFormatMap[98] = &net.rtp.PayloadFormat{98, net.rtp.Audio, 41000, 2, "CD"}
 type PayloadFormat struct {
-    TypeNumber,
-    MediaType,
-    ClockRate,
-    Channels int
-    Name string
+	TypeNumber,
+	MediaType,
+	ClockRate,
+	Channels int
+	Name string
 }
 type payloadMap map[int]*PayloadFormat
 
 var PayloadFormatMap = make(payloadMap, 25)
 
 func init() {
-    PayloadFormatMap[0] = &PayloadFormat{0, Audio, 8000, 1, "PCMU"}
-    // 1         Reserved
-    // 2         Reserved
-    PayloadFormatMap[3] = &PayloadFormat{3, Audio, 8000, 1, "GSM"}
-    PayloadFormatMap[4] = &PayloadFormat{4, Audio, 8000, 1, "G723"}
-    PayloadFormatMap[5] = &PayloadFormat{5, Audio, 8000, 1, "DVI4"}
-    PayloadFormatMap[6] = &PayloadFormat{6, Audio, 16000, 1, "DVI4"}
-    PayloadFormatMap[7] = &PayloadFormat{7, Audio, 8000, 1, "LPC"}
-    PayloadFormatMap[8] = &PayloadFormat{8, Audio, 8000, 1, "PCMA"}
-    PayloadFormatMap[9] = &PayloadFormat{9, Audio, 8000, 1, "G722"}
-    PayloadFormatMap[10] = &PayloadFormat{10, Audio, 44100, 2, "L16"}
-    PayloadFormatMap[11] = &PayloadFormat{11, Audio, 44100, 1, "L16"}
-    PayloadFormatMap[12] = &PayloadFormat{12, Audio, 8000, 1, "QCELP"}
-    PayloadFormatMap[13] = &PayloadFormat{13, Audio, 8000, 1, "CN"}
-    PayloadFormatMap[14] = &PayloadFormat{14, Audio, 90000, 0, "MPA"}
-    PayloadFormatMap[15] = &PayloadFormat{15, Audio, 8000, 1, "G728"}
-    PayloadFormatMap[16] = &PayloadFormat{16, Audio, 11025, 1, "DVI4"}
-    PayloadFormatMap[17] = &PayloadFormat{17, Audio, 22050, 1, "DVI4"}
-    PayloadFormatMap[18] = &PayloadFormat{18, Audio, 8000, 1, "G729"}
-    // 19        Reserved        A
-    // 20        Unassigned      A
-    // 21        Unassigned      A
-    // 22        Unassigned      A
-    // 23        Unassigned      A
-    // 24        Unassigned      V
-    PayloadFormatMap[25] = &PayloadFormat{25, Video, 90000, 0, "CelB"}
-    PayloadFormatMap[26] = &PayloadFormat{26, Video, 90000, 0, "JPEG"}
-    // 27        Unassigned      V
-    PayloadFormatMap[28] = &PayloadFormat{28, Video, 90000, 0, "nv"}
-    // 29        Unassigned      V
-    // 30        Unassigned      V
-    PayloadFormatMap[31] = &PayloadFormat{31, Video, 90000, 0, "H261"}
-    PayloadFormatMap[32] = &PayloadFormat{32, Video, 90000, 0, "MPV"}
-    PayloadFormatMap[33] = &PayloadFormat{33, Audio | Video, 90000, 0, "MP2T"}
-    PayloadFormatMap[34] = &PayloadFormat{34, Video, 90000, 0, "H263"}
-    // 35-71     Unassigned      ?
-    // 72-76     Reserved for RTCP conflict avoidance
-    // 77-95     Unassigned      ?
-    // 96-127    dynamic         ?
+	PayloadFormatMap[0] = &PayloadFormat{0, Audio, 8000, 1, "PCMU"}
+	// 1         Reserved
+	// 2         Reserved
+	PayloadFormatMap[3] = &PayloadFormat{3, Audio, 8000, 1, "GSM"}
+	PayloadFormatMap[4] = &PayloadFormat{4, Audio, 8000, 1, "G723"}
+	PayloadFormatMap[5] = &PayloadFormat{5, Audio, 8000, 1, "DVI4"}
+	PayloadFormatMap[6] = &PayloadFormat{6, Audio, 16000, 1, "DVI4"}
+	PayloadFormatMap[7] = &PayloadFormat{7, Audio, 8000, 1, "LPC"}
+	PayloadFormatMap[8] = &PayloadFormat{8, Audio, 8000, 1, "PCMA"}
+	PayloadFormatMap[9] = &PayloadFormat{9, Audio, 8000, 1, "G722"}
+	PayloadFormatMap[10] = &PayloadFormat{10, Audio, 44100, 2, "L16"}
+	PayloadFormatMap[11] = &PayloadFormat{11, Audio, 44100, 1, "L16"}
+	PayloadFormatMap[12] = &PayloadFormat{12, Audio, 8000, 1, "QCELP"}
+	PayloadFormatMap[13] = &PayloadFormat{13, Audio, 8000, 1, "CN"}
+	PayloadFormatMap[14] = &PayloadFormat{14, Audio, 90000, 0, "MPA"}
+	PayloadFormatMap[15] = &PayloadFormat{15, Audio, 8000, 1, "G728"}
+	PayloadFormatMap[16] = &PayloadFormat{16, Audio, 11025, 1, "DVI4"}
+	PayloadFormatMap[17] = &PayloadFormat{17, Audio, 22050, 1, "DVI4"}
+	PayloadFormatMap[18] = &PayloadFormat{18, Audio, 8000, 1, "G729"}
+	// 19        Reserved        A
+	// 20        Unassigned      A
+	// 21        Unassigned      A
+	// 22        Unassigned      A
+	// 23        Unassigned      A
+	// 24        Unassigned      V
+	PayloadFormatMap[25] = &PayloadFormat{25, Video, 90000, 0, "CelB"}
+	PayloadFormatMap[26] = &PayloadFormat{26, Video, 90000, 0, "JPEG"}
+	// 27        Unassigned      V
+	PayloadFormatMap[28] = &PayloadFormat{28, Video, 90000, 0, "nv"}
+	// 29        Unassigned      V
+	// 30        Unassigned      V
+	PayloadFormatMap[31] = &PayloadFormat{31, Video, 90000, 0, "H261"}
+	PayloadFormatMap[32] = &PayloadFormat{32, Video, 90000, 0, "MPV"}
+	PayloadFormatMap[33] = &PayloadFormat{33, Audio | Video, 90000, 0, "MP2T"}
+	PayloadFormatMap[34] = &PayloadFormat{34, Video, 90000, 0, "H263"}
+	// 35-71     Unassigned      ?
+	// 72-76     Reserved for RTCP conflict avoidance
+	// 77-95     Unassigned      ?
+	// 96-127    dynamic         ?
 }
