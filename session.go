@@ -336,8 +336,12 @@ func (rs *Session) StartSession() (err error) {
 	rs.streamsMapMutex.RLock()
 	if rs.RtcpSessionBandwidth == 0.0 { // If not set by application try to guess a value
 		for _, str := range rs.streamsOut {
-			// Use session-aware lookup (TX direction) so dynamic PTs are resolved correctly.
-			format := rs.resolvePayloadFormat(int(str.PayloadType()), PayloadDirectionTX)
+			// resolvePayloadFormat acquires rs.RLock, which deadlocks here because we
+			// already hold rs.Lock().  Read the maps directly instead.
+			format := rs.txPayloads[int(str.PayloadType())]
+			if format == nil {
+				format = PayloadFormatMap[int(str.PayloadType())]
+			}
 			if format == nil {
 				rs.RtcpSessionBandwidth += 64000. / 20.0 // some standard: 5% of a 64000 bit connection
 				continue
